@@ -18,7 +18,7 @@ class SeederTest extends TestCase
         $this->seed(DatabaseSeeder::class);
 
         $this->assertSame(1, Company::count());
-        $this->assertSame('Distribuidora de Salsamentaria', Company::current()->name);
+        $this->assertSame('El Dorado Distribuidora', Company::current()->name);
     }
 
     public function test_el_seed_crea_un_usuario_por_rol(): void

@@ -16,8 +16,10 @@ class CompanySeeder extends Seeder
         Company::updateOrCreate(
             ['id' => 1],
             [
-                'name' => 'Distribuidora de Salsamentaria',
-                'businessName' => 'Distribuidora de Salsamentaria S.A.S.',
+                'name' => 'El Dorado Distribuidora',
+                // Razón social, NIT y dirección de abajo son de DEMO. Los reales
+                // los carga el cliente desde la aplicación antes de facturar.
+                'businessName' => 'El Dorado Distribuidora S.A.S.',
                 'nit' => '900123456-7',
                 'address' => 'Calle 22 # 25 - 32',
                 'city' => 'Bogotá',

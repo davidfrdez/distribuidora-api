@@ -53,7 +53,7 @@ class Company extends Model
     public static function current(): self
     {
         return self::$current ??= self::query()->first() ?? new self([
-            'name' => 'Distribuidora',
+            'name' => 'El Dorado Distribuidora',
             'minOrderAmount' => 0,
             'defaultWeightTolerancePercent' => 10,
             'reservationTtlMinutes' => 240,

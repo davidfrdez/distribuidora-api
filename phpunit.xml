@@ -32,5 +32,13 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <!--
+            La cuenta de soporte que crea UserSeeder sale de estas variables. Sin
+            fijarlas aquí, el test que la verifica pasa o falla según el .env de
+            cada quien: copiar .env.example (que trae soporte@ejemplo.com) bastaba
+            para romperlo. La suite no puede depender del entorno local.
+        -->
+        <env name="SUPERADMIN_EMAIL" value="soporte@dalioss.com"/>
+        <env name="SUPERADMIN_PASSWORD" value="clave-de-pruebas"/>
     </php>
 </phpunit>

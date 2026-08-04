@@ -33,7 +33,7 @@ class ProductionSeeder extends Seeder
         // sus valores por defecto para que el cliente lo ajuste desde la app.
         Company::updateOrCreate(
             ['id' => 1],
-            ['name' => 'Distribuidora'],
+            ['name' => 'El Dorado Distribuidora'],
         );
         Company::forgetCurrent();
 

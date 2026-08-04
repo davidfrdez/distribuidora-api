@@ -1,4 +1,4 @@
-# Distribuidora de Salsamentaria — contexto del proyecto
+# El Dorado Distribuidora — contexto del proyecto
 
 > Leer esto al iniciar cualquier sesión de trabajo.
 > El tablero vivo de tareas es `docs/PLAN-DE-TRABAJO.md`.
