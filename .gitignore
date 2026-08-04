@@ -3,6 +3,9 @@
 .env
 .env.backup
 .env.production
+.env.deploy
+/bootstrap.zip
+/deploy.zip
 .phpactor.json
 .phpunit.result.cache
 /.fleet
