@@ -4,9 +4,7 @@ namespace Tests\Feature\Api;
 
 use App\Enums\UserRole;
 use App\Models\Product;
-use App\Models\TemperatureLog;
 use App\Models\User;
-use App\Models\Warehouse;
 use App\Services\InventoryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -17,13 +15,10 @@ class InventorySummaryTest extends TestCase
 
     private InventoryService $inventory;
 
-    private Warehouse $warehouse;
-
     protected function setUp(): void
     {
         parent::setUp();
         $this->inventory = app(InventoryService::class);
-        $this->warehouse = Warehouse::factory()->create(['code' => 'CF-01']);
     }
 
     private function actingAsRole(UserRole $role): User
@@ -43,13 +38,12 @@ class InventorySummaryTest extends TestCase
             'shelfLifeDays' => null,
             'minStockKg' => 100,
         ]);
-        $this->inventory->receive($bajoMinimo, $this->warehouse, 20, 12.5, 300000);
+        $this->inventory->receive($bajoMinimo, 20, 12.5, 300000);
 
         // Lote que vence pronto (dentro de la ventana de 7 días).
         $prontoAVencer = Product::factory()->byWeight()->create(['shelfLifeDays' => null]);
         $this->inventory->receive(
             $prontoAVencer,
-            $this->warehouse,
             10,
             5,
             100000,
@@ -60,7 +54,6 @@ class InventorySummaryTest extends TestCase
         $venceLejos = Product::factory()->byWeight()->create(['shelfLifeDays' => null]);
         $this->inventory->receive(
             $venceLejos,
-            $this->warehouse,
             10,
             5,
             100000,
@@ -94,7 +87,6 @@ class InventorySummaryTest extends TestCase
         $vencido = Product::factory()->byWeight()->create(['shelfLifeDays' => null]);
         $this->inventory->receive(
             $vencido,
-            $this->warehouse,
             10,
             5,
             100000,
@@ -104,7 +96,6 @@ class InventorySummaryTest extends TestCase
         $prontoAVencer = Product::factory()->byWeight()->create(['shelfLifeDays' => null]);
         $this->inventory->receive(
             $prontoAVencer,
-            $this->warehouse,
             10,
             5,
             100000,
@@ -123,39 +114,10 @@ class InventorySummaryTest extends TestCase
         $response->assertJsonPath('data.topExpiring.1.productName', $prontoAVencer->name);
     }
 
-    public function test_las_desviaciones_de_cadena_de_frio_solo_cuentan_las_ultimas_24_horas(): void
-    {
-        $this->actingAsRole(UserRole::ADMINISTRADOR);
-
-        TemperatureLog::factory()->create([
-            'warehouseId' => $this->warehouse->id,
-            'outOfRange' => true,
-            'recordedAt' => now()->subHours(2),
-        ]);
-
-        // Fuera de la ventana de 24 h: no debe contar.
-        TemperatureLog::factory()->create([
-            'warehouseId' => $this->warehouse->id,
-            'outOfRange' => true,
-            'recordedAt' => now()->subHours(30),
-        ]);
-
-        // Dentro de la ventana pero sin desviación: no debe contar.
-        TemperatureLog::factory()->create([
-            'warehouseId' => $this->warehouse->id,
-            'outOfRange' => false,
-            'recordedAt' => now()->subHours(1),
-        ]);
-
-        $this->getJson('/api/admin/inventory/summary')
-            ->assertOk()
-            ->assertJsonPath('data.alerts.coldChainDeviations24h', 1);
-    }
-
     public function test_total_value_solo_lo_ve_quien_puede_ver_finanzas(): void
     {
         $chorizo = Product::factory()->byWeight()->create(['shelfLifeDays' => null]);
-        $this->inventory->receive($chorizo, $this->warehouse, 20, 12.5, 300000);
+        $this->inventory->receive($chorizo, 20, 12.5, 300000);
 
         $this->actingAsRole(UserRole::ADMINISTRADOR);
         $this->getJson('/api/admin/inventory/summary')

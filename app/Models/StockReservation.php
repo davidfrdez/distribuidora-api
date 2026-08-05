@@ -25,7 +25,7 @@ class StockReservation extends Model
     protected $table = 'stock_reservation';
 
     protected $fillable = [
-        'productId', 'warehouseId', 'lotId',
+        'productId', 'lotId',
         'units', 'kg', 'status', 'referenceType', 'referenceId',
         'expiresAt', 'resolvedAt', 'createdById', 'notes',
     ];
@@ -44,12 +44,6 @@ class StockReservation extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class, 'productId');
-    }
-
-    /** @return BelongsTo<Warehouse, $this> */
-    public function warehouse(): BelongsTo
-    {
-        return $this->belongsTo(Warehouse::class, 'warehouseId');
     }
 
     /** @return BelongsTo<Lot, $this> */

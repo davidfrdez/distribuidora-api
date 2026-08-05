@@ -5,7 +5,6 @@ namespace Database\Factories;
 use App\Enums\ReservationStatus;
 use App\Models\Product;
 use App\Models\StockReservation;
-use App\Models\Warehouse;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -22,7 +21,6 @@ class StockReservationFactory extends Factory
     {
         return [
             'productId' => Product::factory(),
-            'warehouseId' => Warehouse::factory(),
             'lotId' => null,
             'units' => 0,
             'kg' => 0,

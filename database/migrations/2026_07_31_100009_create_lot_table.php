@@ -25,7 +25,6 @@ return new class extends Migration
         Schema::create('lot', function (Blueprint $table) {
             $table->id();
             $table->foreignId('productId')->constrained('product')->cascadeOnDelete();
-            $table->foreignId('warehouseId')->constrained('warehouse');
             $table->foreignId('supplierId')->nullable()->constrained('supplier')->nullOnDelete();
 
             $table->string('code', 40);                       // consecutivo interno: LOT-000123
@@ -60,10 +59,10 @@ return new class extends Migration
             $table->timestamp('deletedAt')->nullable();
 
             $table->unique(['code'], 'lot_unique_code');
-            // Índice del FIFO: lotes disponibles de un producto en una bodega,
-            // ordenados por vencimiento.
+            // Índice del FIFO: lotes disponibles de un producto, ordenados por
+            // vencimiento. Los que no tienen fecha se ordenan por `receivedAt`.
             $table->index(
-                ['productId', 'warehouseId', 'status', 'expirationDate'],
+                ['productId', 'status', 'expirationDate'],
                 'lot_index_fifo',
             );
             $table->index(['expirationDate'], 'lot_index_expiring');

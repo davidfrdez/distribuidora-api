@@ -7,7 +7,6 @@ use App\Enums\UserRole;
 use App\Models\Product;
 use App\Models\Supplier;
 use App\Models\User;
-use App\Models\Warehouse;
 use App\Services\InventoryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -18,13 +17,10 @@ class InventoryApiTest extends TestCase
 
     private InventoryService $inventory;
 
-    private Warehouse $warehouse;
-
     protected function setUp(): void
     {
         parent::setUp();
         $this->inventory = app(InventoryService::class);
-        $this->warehouse = Warehouse::factory()->create(['code' => 'CF-01']);
     }
 
     private function actingAsRole(UserRole $role): User
@@ -45,7 +41,6 @@ class InventoryApiTest extends TestCase
 
         $this->postJson('/api/admin/inventory/receive', [
             'productId' => $chorizo->id,
-            'warehouseId' => $this->warehouse->id,
             'supplierId' => $proveedor->id,
             'units' => 20,
             'kg' => 12.5,
@@ -71,14 +66,12 @@ class InventoryApiTest extends TestCase
         // 422 del FormRequest si no viene ninguna cantidad…
         $this->postJson('/api/admin/inventory/receive', [
             'productId' => $chorizo->id,
-            'warehouseId' => $this->warehouse->id,
             'totalCost' => 100000,
         ])->assertStatus(422)->assertJsonValidationErrors('units');
 
         // …y 422 del servicio si vienen unidades pero no kilos.
         $this->postJson('/api/admin/inventory/receive', [
             'productId' => $chorizo->id,
-            'warehouseId' => $this->warehouse->id,
             'units' => 10,
             'totalCost' => 100000,
         ])->assertStatus(422);
@@ -91,7 +84,6 @@ class InventoryApiTest extends TestCase
 
         $this->postJson('/api/admin/inventory/receive', [
             'productId' => $chorizo->id,
-            'warehouseId' => $this->warehouse->id,
             'units' => 10,
             'kg' => 5,
             'totalCost' => 100000,
@@ -106,8 +98,8 @@ class InventoryApiTest extends TestCase
     {
         $this->actingAsRole(UserRole::EMPACADOR);
         $chorizo = Product::factory()->byWeight()->create();
-        $this->inventory->receive($chorizo, $this->warehouse, 20, 12.5, 300000);
-        $this->inventory->reserve($chorizo, $this->warehouse, 5, 3, 'order', 1);
+        $this->inventory->receive($chorizo, 20, 12.5, 300000);
+        $this->inventory->reserve($chorizo, 5, 3, 'order', 1);
 
         $this->getJson('/api/admin/inventory/stock')
             ->assertOk()
@@ -121,8 +113,8 @@ class InventoryApiTest extends TestCase
         $this->actingAsRole(UserRole::ALMACENISTA);
         $chorizo = Product::factory()->byWeight()->create(['shelfLifeDays' => null]);
 
-        $this->inventory->receive($chorizo, $this->warehouse, 10, 5, 100000, expirationDate: now()->addDays(3));
-        $this->inventory->receive($chorizo, $this->warehouse, 10, 5, 100000, expirationDate: now()->addDays(60));
+        $this->inventory->receive($chorizo, 10, 5, 100000, expirationDate: now()->addDays(3));
+        $this->inventory->receive($chorizo, 10, 5, 100000, expirationDate: now()->addDays(60));
 
         $this->getJson('/api/admin/inventory/lots?expiringInDays=7')
             ->assertOk()
@@ -134,7 +126,7 @@ class InventoryApiTest extends TestCase
     {
         $this->actingAsRole(UserRole::ADMINISTRADOR);
         $chorizo = Product::factory()->byWeight()->create();
-        $this->inventory->receive($chorizo, $this->warehouse, 20, 12.5, 300000);
+        $this->inventory->receive($chorizo, 20, 12.5, 300000);
 
         $this->getJson('/api/admin/inventory/kardex')
             ->assertOk()
@@ -149,10 +141,10 @@ class InventoryApiTest extends TestCase
     {
         $this->actingAsRole(UserRole::ADMINISTRADOR);
         $chorizo = Product::factory()->byWeight()->create();
-        $lote = $this->inventory->receive($chorizo, $this->warehouse, 20, 12.5, 300000);
+        $lote = $this->inventory->receive($chorizo, 20, 12.5, 300000);
 
         $this->inventory->consumeFifo(
-            $chorizo, $this->warehouse, 2.14,
+            $chorizo, 2.14,
             \App\Enums\MovementType::SALE, 'order', 9001,
         );
 
@@ -168,29 +160,11 @@ class InventoryApiTest extends TestCase
 
     // ── Operaciones ──────────────────────────────────────────────────────────
 
-    public function test_traslada_entre_bodegas(): void
-    {
-        $this->actingAsRole(UserRole::ALMACENISTA);
-        $congelador = Warehouse::factory()->create(['code' => 'CG-01']);
-        $chorizo = Product::factory()->byWeight()->create();
-        $lote = $this->inventory->receive($chorizo, $this->warehouse, 20, 12.5, 300000);
-
-        $this->postJson('/api/admin/inventory/transfer', [
-            'lotId' => $lote->id,
-            'destinationWarehouseId' => $congelador->id,
-            'units' => 8,
-            'kg' => 5,
-        ])
-            ->assertCreated()
-            ->assertJsonPath('destinationLot.currentKg', '5.0000')
-            ->assertJsonPath('destinationLot.warehouseId', $congelador->id);
-    }
-
     public function test_registra_una_merma(): void
     {
         $this->actingAsRole(UserRole::EMPACADOR);
         $chorizo = Product::factory()->byWeight()->create();
-        $lote = $this->inventory->receive($chorizo, $this->warehouse, 20, 12.5, 300000);
+        $lote = $this->inventory->receive($chorizo, 20, 12.5, 300000);
 
         $this->postJson('/api/admin/inventory/waste', [
             'lotId' => $lote->id,
@@ -208,9 +182,9 @@ class InventoryApiTest extends TestCase
     public function test_un_ajuste_exige_motivo_y_solo_lo_hace_el_administrador(): void
     {
         $chorizo = Product::factory()->byWeight()->create();
-        $lote = $this->inventory->receive($chorizo, $this->warehouse, 20, 12.5, 300000);
+        $lote = $this->inventory->receive($chorizo, 20, 12.5, 300000);
 
-        // El almacenista puede recibir y trasladar, pero no ajustar: el ajuste es
+        // El almacenista puede recibir, pero no ajustar: el ajuste es
         // la vía por la que se podría tapar un faltante.
         $this->actingAsRole(UserRole::ALMACENISTA);
         $this->postJson('/api/admin/inventory/adjust', [
@@ -242,7 +216,7 @@ class InventoryApiTest extends TestCase
     {
         $this->actingAsRole(UserRole::ALMACENISTA);
         $chorizo = Product::factory()->byWeight()->create();
-        $lote = $this->inventory->receive($chorizo, $this->warehouse, 20, 12.5, 300000);
+        $lote = $this->inventory->receive($chorizo, 20, 12.5, 300000);
 
         $this->postJson("/api/admin/inventory/lots/{$lote->id}/void", [
             'reason' => 'Llegó producto distinto al de la factura',
@@ -263,7 +237,6 @@ class InventoryApiTest extends TestCase
         // …pero no recibe mercancía.
         $this->postJson('/api/admin/inventory/receive', [
             'productId' => $chorizo->id,
-            'warehouseId' => $this->warehouse->id,
             'units' => 10,
             'kg' => 5,
             'totalCost' => 100000,

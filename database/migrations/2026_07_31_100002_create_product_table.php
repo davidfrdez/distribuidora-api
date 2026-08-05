@@ -72,9 +72,6 @@ return new class extends Migration
             $table->decimal('maxStockUnits', 14, 4)->default(0);
             // Merma esperada por deshidratación/purga, en % por día de almacenamiento.
             $table->decimal('shrinkagePercentPerDay', 6, 4)->default(0);
-            // Rango de temperatura al que debe conservarse (cadena de frío).
-            $table->decimal('storageTempMin', 5, 2)->nullable();
-            $table->decimal('storageTempMax', 5, 2)->nullable();
 
             // ── Disponibilidad ────────────────────────────────────────────────
             $table->boolean('sellable')->default(true);

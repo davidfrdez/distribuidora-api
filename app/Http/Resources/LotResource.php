@@ -22,8 +22,6 @@ class LotResource extends JsonResource
 
             'productId' => $this->productId,
             'product' => new ProductResource($this->whenLoaded('product')),
-            'warehouseId' => $this->warehouseId,
-            'warehouse' => new WarehouseResource($this->whenLoaded('warehouse')),
             'supplierId' => $this->supplierId,
             'supplier' => new SupplierResource($this->whenLoaded('supplier')),
 

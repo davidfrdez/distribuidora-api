@@ -47,8 +47,6 @@ class ProductResource extends JsonResource
             'minStockUnits' => $this->minStockUnits,
             'maxStockUnits' => $this->maxStockUnits,
             'shrinkagePercentPerDay' => $this->shrinkagePercentPerDay,
-            'storageTempMin' => $this->storageTempMin,
-            'storageTempMax' => $this->storageTempMax,
 
             'sellable' => $this->sellable,
             'purchasable' => $this->purchasable,

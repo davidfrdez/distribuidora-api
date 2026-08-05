@@ -90,31 +90,6 @@ class AutoCodeTest extends TestCase
             ->assertJsonPath('data.code', 'PROV-001');
     }
 
-    // ── Bodega ───────────────────────────────────────────────────────────────
-
-    public function test_crea_una_bodega_sin_code_y_lo_autogenera(): void
-    {
-        $this->actingAsRole(UserRole::ALMACENISTA);
-
-        $this->postJson('/api/admin/warehouses', [
-            'name' => 'Cuarto de refrigeración',
-        ])
-            ->assertCreated()
-            ->assertJsonPath('data.code', 'BOD-01');
-    }
-
-    public function test_crea_una_bodega_con_code_explicito_y_lo_respeta(): void
-    {
-        $this->actingAsRole(UserRole::ALMACENISTA);
-
-        $this->postJson('/api/admin/warehouses', [
-            'code' => 'CF-02',
-            'name' => 'Cuarto de refrigeración 2',
-        ])
-            ->assertCreated()
-            ->assertJsonPath('data.code', 'CF-02');
-    }
-
     // ── Categoría ────────────────────────────────────────────────────────────
 
     public function test_crea_una_categoria_sin_code_y_lo_autogenera(): void

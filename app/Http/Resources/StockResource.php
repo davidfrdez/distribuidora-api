@@ -18,8 +18,6 @@ class StockResource extends JsonResource
             'id' => $this->id,
             'productId' => $this->productId,
             'product' => new ProductResource($this->whenLoaded('product')),
-            'warehouseId' => $this->warehouseId,
-            'warehouse' => new WarehouseResource($this->whenLoaded('warehouse')),
 
             'currentUnits' => $this->currentUnits,
             'reservedUnits' => $this->reservedUnits,

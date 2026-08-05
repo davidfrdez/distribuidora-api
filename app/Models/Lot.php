@@ -30,7 +30,7 @@ class Lot extends Model
     protected $table = 'lot';
 
     protected $fillable = [
-        'productId', 'warehouseId', 'supplierId',
+        'productId', 'supplierId',
         'code', 'supplierLotCode', 'purchaseInvoice',
         'initialUnits', 'currentUnits', 'initialKg', 'currentKg',
         'costPerUnit', 'costPerKg', 'totalCost',
@@ -63,12 +63,6 @@ class Lot extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class, 'productId');
-    }
-
-    /** @return BelongsTo<Warehouse, $this> */
-    public function warehouse(): BelongsTo
-    {
-        return $this->belongsTo(Warehouse::class, 'warehouseId');
     }
 
     /** @return BelongsTo<Supplier, $this> */

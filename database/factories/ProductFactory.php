@@ -67,6 +67,16 @@ class ProductFactory extends Factory
         ]);
     }
 
+    /** Bloque: pieza de peso variable; se cuenta por pieza y se pesa al despachar. */
+    public function block(): static
+    {
+        return $this->state(fn () => [
+            'saleMode' => SaleMode::BLOCK->value,
+            'tracksWeight' => true,
+            'netWeightKg' => null,
+        ]);
+    }
+
     public function withoutLots(): static
     {
         return $this->state(fn () => ['trackLots' => false]);

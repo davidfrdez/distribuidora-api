@@ -13,7 +13,6 @@ class DatabaseSeeder extends Seeder
             UserSeeder::class,
             UnitSeeder::class,
             CatalogSeeder::class,
-            WarehouseSeeder::class,
         ]);
     }
 }

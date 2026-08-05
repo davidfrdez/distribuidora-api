@@ -10,6 +10,7 @@ use App\Http\Resources\ProductResource;
 use App\Http\Resources\SupplierResource;
 use App\Http\Resources\UnitResource;
 use App\Models\Category;
+use App\Models\Lot;
 use App\Models\Product;
 use App\Models\ProductBarcode;
 use App\Models\Supplier;
@@ -73,6 +74,8 @@ class CatalogController extends Controller
             ->withCount('products')
             ->when($request->boolean('rootOnly'), fn ($q) => $q->whereNull('parentId')->with('children'))
             ->when($request->boolean('activeOnly'), fn ($q) => $q->where('active', true))
+            // `disabled=1` muestra SÓLO las deshabilitadas (para la vista aparte).
+            ->when($request->boolean('disabled'), fn ($q) => $q->where('active', false))
             ->orderBy('displayOrder')
             ->orderBy('name')
             ->get();
@@ -217,6 +220,39 @@ class CatalogController extends Controller
         $supplier->update($this->supplierRules($request, $supplier));
 
         return new SupplierResource($supplier);
+    }
+
+    /**
+     * GET /api/admin/suppliers/{supplier}/catalog
+     *
+     * Qué provee este proveedor, DERIVADO de los lotes que ha entregado: no hay
+     * una relación fija producto↔proveedor, así que se deduce del histórico de
+     * recepciones. Devuelve los productos y las categorías que trae.
+     */
+    public function supplierCatalog(Supplier $supplier): JsonResponse
+    {
+        $productIds = Lot::query()
+            ->where('supplierId', $supplier->id)
+            ->distinct()
+            ->pluck('productId');
+
+        $products = Product::query()
+            ->whereIn('id', $productIds)
+            ->with('category:id,name')
+            ->orderBy('name')
+            ->get();
+
+        $categories = $products
+            ->pluck('category')
+            ->filter()
+            ->unique('id')
+            ->sortBy('name')
+            ->values();
+
+        return response()->json([
+            'products' => ProductResource::collection($products),
+            'categories' => CategoryResource::collection($categories),
+        ]);
     }
 
     /** @return array<string, mixed> */

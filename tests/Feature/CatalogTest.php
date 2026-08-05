@@ -18,7 +18,7 @@ class CatalogTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_el_seed_carga_el_catalogo_con_los_tres_modos_de_venta(): void
+    public function test_el_seed_carga_el_catalogo_con_los_cuatro_modos_de_venta(): void
     {
         $this->seed(CompanySeeder::class);
         $this->seed(UnitSeeder::class);
@@ -34,6 +34,12 @@ class CatalogTest extends TestCase
                 "El catálogo debe ejercitar el modo {$mode->value}.",
             );
         }
+
+        // El queso campesino es un bloque: pieza de peso variable.
+        $queso = $products->firstWhere('sku', 'QUE-001');
+        $this->assertSame(SaleMode::BLOCK, $queso->saleMode);
+        $this->assertTrue($queso->tracksWeight());
+        $this->assertNull($queso->netWeightKg);
 
         // El chorizo santarrosano se vende por kg a $32.000.
         $chorizo = $products->firstWhere('sku', 'CHO-004');
@@ -58,16 +64,15 @@ class CatalogTest extends TestCase
         $this->assertSame(['KG', 'L', 'UN'], $bases);
     }
 
-    public function test_los_congelados_quedan_con_rango_de_temperatura_bajo_cero(): void
+    public function test_la_libra_del_seed_es_de_500_gramos(): void
     {
         $this->seed(CompanySeeder::class);
         $this->seed(UnitSeeder::class);
-        $this->seed(CatalogSeeder::class);
 
-        $pavo = Product::where('sku', 'PAV-001')->firstOrFail();
+        // Libra comercial colombiana: 1 kg = 2 libras exactas.
+        $libra = Unit::where('code', 'LB')->firstOrFail();
 
-        $this->assertSame('-18.00', $pavo->storageTempMin);
-        $this->assertSame('-12.00', $pavo->storageTempMax);
+        $this->assertSame(0.5, (float) $libra->factorToBase);
     }
 
     public function test_la_tolerancia_de_peso_cae_a_la_del_negocio_cuando_el_producto_no_la_define(): void

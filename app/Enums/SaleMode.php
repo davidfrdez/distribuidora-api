@@ -26,6 +26,14 @@ enum SaleMode: string
      */
     case FIXED_PACK = 'FIXED_PACK';
 
+    /**
+     * Bloque: pieza entera de peso variable. Se pide por pieza («2 bloques de
+     * queso») pero cada una se pesa al despachar y se cobra por kilo. A
+     * diferencia de FIXED_PACK el peso NO se deriva: es real, capturado en la
+     * báscula como en WEIGHT.
+     */
+    case BLOCK = 'BLOCK';
+
     /** ¿El inventario lleva saldo en kg para este modo? */
     public function tracksWeight(): bool
     {
@@ -35,12 +43,13 @@ enum SaleMode: string
     /** ¿El precio se multiplica por kg (true) o por unidad (false)? */
     public function pricedByWeight(): bool
     {
-        return $this === self::WEIGHT;
+        return $this === self::WEIGHT || $this === self::BLOCK;
     }
 
     /**
      * Saldo que manda al pedir, vender o consumir.
-     * De un producto de peso variable se piden kilos; de los otros dos, unidades.
+     * De un producto de peso variable se piden kilos; de los demás, unidades.
+     * El bloque se pide por pieza aunque su precio dependa del peso.
      */
     public function driver(): QuantityDriver
     {
@@ -49,7 +58,7 @@ enum SaleMode: string
 
     /**
      * ¿El peso se deriva de las unidades en vez de pesarse?
-     * Sólo FIXED_PACK: kg = unidades × netWeightKg.
+     * Sólo FIXED_PACK: kg = unidades × netWeightKg. El bloque NO deriva: se pesa.
      */
     public function hasDerivedWeight(): bool
     {
@@ -62,6 +71,7 @@ enum SaleMode: string
             self::WEIGHT => 'Peso variable (por kg)',
             self::UNIT => 'Por unidad',
             self::FIXED_PACK => 'Paquete de peso fijo',
+            self::BLOCK => 'Bloque (se pesa al despachar)',
         };
     }
 }

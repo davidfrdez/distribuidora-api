@@ -5,6 +5,7 @@ namespace Tests\Feature\Api;
 use App\Enums\UserRole;
 use App\Models\Category;
 use App\Models\Company;
+use App\Models\Lot;
 use App\Models\Product;
 use App\Models\ProductBarcode;
 use App\Models\Supplier;
@@ -80,6 +81,25 @@ class CatalogApiTest extends TestCase
             ->assertJsonValidationErrors('parentId');
     }
 
+    public function test_el_filtro_de_deshabilitadas_lista_solo_las_inactivas(): void
+    {
+        $this->actingAsRole(UserRole::ALMACENISTA);
+        $activa = Category::factory()->create(['name' => 'Chorizos', 'active' => true]);
+        $inactiva = Category::factory()->create(['name' => 'Descontinuados', 'active' => false]);
+
+        // Sólo activas.
+        $this->getJson('/api/admin/categories?activeOnly=1')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $activa->id);
+
+        // Sólo deshabilitadas.
+        $this->getJson('/api/admin/categories?disabled=1')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $inactiva->id);
+    }
+
     // ── Códigos de barras ────────────────────────────────────────────────────
 
     public function test_agrega_un_codigo_de_barras_y_lo_resuelve_al_escanear(): void
@@ -147,6 +167,38 @@ class CatalogApiTest extends TestCase
             ->assertOk()
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.invimaRegistration', 'INV-2211');
+    }
+
+    public function test_el_catalogo_del_proveedor_deriva_de_sus_lotes(): void
+    {
+        $this->actingAsRole(UserRole::ALMACENISTA);
+
+        $proveedor = Supplier::factory()->create();
+        $otro = Supplier::factory()->create();
+
+        $quesos = Category::factory()->create(['name' => 'Quesos']);
+        $chorizos = Category::factory()->create(['name' => 'Chorizos']);
+
+        $queso = Product::factory()->create(['name' => 'Queso Campesino', 'categoryId' => $quesos->id]);
+        $chorizo = Product::factory()->create(['name' => 'Chorizo', 'categoryId' => $chorizos->id]);
+        $ajeno = Product::factory()->create(['name' => 'Ajeno']);
+
+        // Este proveedor ha entregado dos productos (uno de ellos en dos lotes).
+        Lot::factory()->create(['supplierId' => $proveedor->id, 'productId' => $queso->id]);
+        Lot::factory()->create(['supplierId' => $proveedor->id, 'productId' => $queso->id]);
+        Lot::factory()->create(['supplierId' => $proveedor->id, 'productId' => $chorizo->id]);
+        // Un lote de OTRO proveedor no debe aparecer.
+        Lot::factory()->create(['supplierId' => $otro->id, 'productId' => $ajeno->id]);
+
+        $response = $this->getJson("/api/admin/suppliers/{$proveedor->id}/catalog")->assertOk();
+
+        // Dos productos distintos (el queso no se duplica pese a tener dos lotes).
+        $this->assertCount(2, $response->json('products'));
+        $this->assertCount(2, $response->json('categories'));
+
+        $productNames = collect($response->json('products'))->pluck('name');
+        $this->assertTrue($productNames->contains('Queso Campesino'));
+        $this->assertFalse($productNames->contains('Ajeno'));
     }
 
     // ── Negocio ──────────────────────────────────────────────────────────────

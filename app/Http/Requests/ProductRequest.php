@@ -57,8 +57,6 @@ class ProductRequest extends FormRequest
             'minStockUnits' => ['numeric', 'min:0'],
             'maxStockUnits' => ['numeric', 'min:0'],
             'shrinkagePercentPerDay' => ['numeric', 'min:0', 'max:100'],
-            'storageTempMin' => ['nullable', 'numeric', 'min:-50', 'max:50'],
-            'storageTempMax' => ['nullable', 'numeric', 'min:-50', 'max:50'],
 
             'sellable' => ['boolean'],
             'purchasable' => ['boolean'],
@@ -83,16 +81,6 @@ class ProductRequest extends FormRequest
                 $validator->errors()->add(
                     'netWeightKg',
                     'Un paquete de peso fijo necesita el peso neto por unidad.',
-                );
-            }
-
-            $min = $this->input('storageTempMin');
-            $max = $this->input('storageTempMax');
-
-            if ($min !== null && $max !== null && (float) $min > (float) $max) {
-                $validator->errors()->add(
-                    'storageTempMax',
-                    'La temperatura máxima no puede ser menor que la mínima.',
                 );
             }
         });

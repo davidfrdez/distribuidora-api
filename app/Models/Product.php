@@ -35,7 +35,7 @@ class Product extends Model
         'purchaseUnitId', 'saleUnitId',
         'trackLots', 'shelfLifeDays', 'expirationAlertDays',
         'minStockKg', 'maxStockKg', 'minStockUnits', 'maxStockUnits',
-        'shrinkagePercentPerDay', 'storageTempMin', 'storageTempMax',
+        'shrinkagePercentPerDay',
         'sellable', 'purchasable', 'temporarilyOut', 'displayOrder', 'active',
     ];
 
@@ -60,8 +60,6 @@ class Product extends Model
         'minStockUnits' => 'decimal:4',
         'maxStockUnits' => 'decimal:4',
         'shrinkagePercentPerDay' => 'decimal:4',
-        'storageTempMin' => 'decimal:2',
-        'storageTempMax' => 'decimal:2',
         'sellable' => 'boolean',
         'purchasable' => 'boolean',
         'temporarilyOut' => 'boolean',

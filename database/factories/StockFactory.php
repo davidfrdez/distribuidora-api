@@ -4,7 +4,6 @@ namespace Database\Factories;
 
 use App\Models\Product;
 use App\Models\Stock;
-use App\Models\Warehouse;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -21,7 +20,6 @@ class StockFactory extends Factory
     {
         return [
             'productId' => Product::factory(),
-            'warehouseId' => Warehouse::factory(),
             'currentUnits' => 0,
             'reservedUnits' => 0,
             'currentKg' => 0,

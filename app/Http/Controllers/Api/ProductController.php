@@ -21,6 +21,9 @@ class ProductController extends Controller
     {
         $products = Product::query()
             ->with(['category', 'purchaseUnit', 'saleUnit'])
+            // `archived=1` muestra SÓLO los archivados (para reactivarlos); sin el
+            // parámetro, el scope de SoftDeletes ya los excluye del catálogo vivo.
+            ->when($request->boolean('archived'), fn ($q) => $q->onlyTrashed())
             ->when($request->filled('search'), function ($query) use ($request) {
                 $search = $request->string('search')->toString();
                 $query->where(fn ($q) => $q
@@ -83,13 +86,29 @@ class ProductController extends Controller
     /**
      * DELETE /api/admin/products/{product}
      *
-     * Soft delete: el producto sale del catálogo pero los lotes y movimientos
-     * históricos siguen apuntando a él, que es lo que sostiene la trazabilidad.
+     * Archiva (soft delete): el producto sale del catálogo pero los lotes y
+     * movimientos históricos siguen apuntando a él, que es lo que sostiene la
+     * trazabilidad y el estudio de ventas. Nunca se borra de verdad.
      */
     public function destroy(Product $product): JsonResponse
     {
         $product->delete();
 
-        return response()->json(['message' => 'Producto retirado del catálogo.']);
+        return response()->json(['message' => 'Producto archivado. Su historial se conserva.']);
+    }
+
+    /**
+     * POST /api/admin/products/{id}/restore
+     *
+     * Reactiva un producto archivado y lo devuelve al catálogo. El binding
+     * resuelve el id incluyendo los archivados, que el scope normal esconde.
+     */
+    public function restore(int $id): ProductResource
+    {
+        /** @var Product $product */
+        $product = Product::withTrashed()->findOrFail($id);
+        $product->restore();
+
+        return new ProductResource($product->load(['category', 'purchaseUnit', 'saleUnit']));
     }
 }

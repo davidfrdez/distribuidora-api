@@ -18,7 +18,9 @@ class UnitSeeder extends Seeder
             // [code, name, kind, factorToBase, isBase, decimals]
             ['KG', 'Kilogramo', UnitKind::WEIGHT, 1, true, 3],
             ['G', 'Gramo', UnitKind::WEIGHT, 0.001, false, 0],
-            ['LB', 'Libra', UnitKind::WEIGHT, 0.45359237, false, 3],
+            // Libra COMERCIAL colombiana = 500 g exactos (no la libra internacional
+            // de 453,592 g). Decisión del cliente 2026-08-04: 1 kg = 2 libras.
+            ['LB', 'Libra', UnitKind::WEIGHT, 0.5, false, 3],
             ['ARR', 'Arroba', UnitKind::WEIGHT, 12.5, false, 2],
             ['UN', 'Unidad', UnitKind::COUNT, 1, true, 0],
             ['PAQ', 'Paquete', UnitKind::COUNT, 1, false, 0],

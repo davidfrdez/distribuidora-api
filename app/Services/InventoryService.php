@@ -7,13 +7,13 @@ use App\Enums\MovementDirection;
 use App\Enums\MovementType;
 use App\Enums\QuantityDriver;
 use App\Enums\ReservationStatus;
+use App\Enums\SaleMode;
 use App\Models\Lot;
 use App\Models\Product;
 use App\Models\Stock;
 use App\Models\StockMovement;
 use App\Models\StockReservation;
 use App\Models\Supplier;
-use App\Models\Warehouse;
 use App\Support\ConsumptionLine;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
@@ -60,7 +60,6 @@ class InventoryService
      */
     public function receive(
         Product $product,
-        Warehouse $warehouse,
         float $units,
         float $kg,
         float $totalCost,
@@ -83,7 +82,6 @@ class InventoryService
 
         return DB::transaction(function () use (
             $product,
-            $warehouse,
             $units,
             $kg,
             $totalCost,
@@ -106,7 +104,6 @@ class InventoryService
 
             $lot = Lot::create([
                 'productId' => $product->id,
-                'warehouseId' => $warehouse->id,
                 'supplierId' => $supplier?->id,
                 'code' => $this->codeGenerator->generateFixed(
                     'LOT',
@@ -134,7 +131,7 @@ class InventoryService
             // El promedio ponderado se calcula con el saldo ANTERIOR a esta entrada.
             $this->refreshAverageCost($product, $units, $kg, $totalCost);
 
-            $stock = $this->lockStock($product, $warehouse);
+            $stock = $this->lockStock($product);
 
             $movement = $this->writeMovement(
                 lot: $lot,
@@ -172,7 +169,6 @@ class InventoryService
      */
     public function consumeFifo(
         Product $product,
-        Warehouse $warehouse,
         float $quantity,
         MovementType $type,
         string $referenceType,
@@ -190,7 +186,6 @@ class InventoryService
 
         return DB::transaction(function () use (
             $product,
-            $warehouse,
             $quantity,
             $type,
             $referenceType,
@@ -199,8 +194,8 @@ class InventoryService
             $notes,
         ) {
             $driver = $product->saleMode->driver();
-            $stock = $this->lockStock($product, $warehouse);
-            $lots = $this->lockFifoLots($product, $warehouse);
+            $stock = $this->lockStock($product);
+            $lots = $this->lockFifoLots($product);
 
             $this->assertEnoughStock($product, $lots, $driver, $quantity);
 
@@ -291,7 +286,7 @@ class InventoryService
             // ORDEN DE BLOQUEO: primero `stock`, después `lot`. Todos los métodos
             // de este servicio lo respetan; invertirlo en uno solo abriría la
             // puerta a deadlocks entre operaciones concurrentes.
-            $stock = $this->lockStock($product, $lot->warehouse);
+            $stock = $this->lockStock($product);
 
             /** @var Lot $lot */
             $lot = Lot::whereKey($lot->id)->lockForUpdate()->firstOrFail();
@@ -346,7 +341,7 @@ class InventoryService
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // AJUSTES Y TRASLADOS
+    // AJUSTES Y ANULACIONES
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
@@ -387,7 +382,7 @@ class InventoryService
             $product = $lot->product;
 
             // Orden de bloqueo: `stock` antes de `lot` (ver consumeFromLot).
-            $stock = $this->lockStock($product, $lot->warehouse);
+            $stock = $this->lockStock($product);
 
             /** @var Lot $lot */
             $lot = Lot::whereKey($lot->id)->lockForUpdate()->firstOrFail();
@@ -430,98 +425,6 @@ class InventoryService
     }
 
     /**
-     * Traslada mercancía a otra bodega.
-     *
-     * No se "mueve" el lote: se registra una salida del lote de origen y se crea
-     * un lote nuevo en destino que hereda vencimiento, proveedor, lote del
-     * fabricante y costo. Así un lote pertenece siempre a una sola bodega y la
-     * trazabilidad no se pierde en el camino.
-     *
-     * @return array{out: StockMovement, in: StockMovement, lot: Lot}
-     */
-    public function transfer(
-        Lot $lot,
-        Warehouse $destination,
-        float $units,
-        float $kg,
-        ?int $userId = null,
-        ?string $notes = null,
-    ): array {
-        if ($lot->warehouseId === $destination->id) {
-            throw new HttpException(422, 'El origen y el destino del traslado son la misma bodega.');
-        }
-
-        return DB::transaction(function () use ($lot, $destination, $units, $kg, $userId, $notes) {
-            // Dos traslados simultáneos en sentidos opuestos entre las mismas dos
-            // bodegas se bloquearían mutuamente. Se toman los dos candados de
-            // `stock` por adelantado en orden determinista (por warehouseId) para
-            // que ambas transacciones los pidan en la misma secuencia.
-            foreach ($this->orderedWarehouses($lot->warehouse, $destination) as $warehouse) {
-                $this->lockStock($lot->product, $warehouse);
-            }
-
-            $out = $this->consumeFromLot(
-                lot: $lot,
-                units: $units,
-                kg: $kg,
-                type: MovementType::TRANSFER_OUT,
-                referenceType: 'transfer',
-                referenceId: null,
-                userId: $userId,
-                notes: $notes,
-            );
-
-            $source = $out->lot;
-            $product = $source->product;
-
-            $destinationLot = Lot::create([
-                'productId' => $source->productId,
-                'warehouseId' => $destination->id,
-                'supplierId' => $source->supplierId,
-                'code' => $this->codeGenerator->generateFixed(
-                    'LOT',
-                    'lot',
-                    'code',
-                    6,
-                ),
-                'supplierLotCode' => $source->supplierLotCode,
-                'purchaseInvoice' => $source->purchaseInvoice,
-                'initialUnits' => $out->units,
-                'currentUnits' => $out->units,
-                'initialKg' => $out->kg,
-                'currentKg' => $out->kg,
-                'costPerUnit' => $source->costPerUnit,
-                'costPerKg' => $source->costPerKg,
-                'totalCost' => round($out->cost, 2),
-                'receivedAt' => now()->toDateString(),
-                'expirationDate' => $source->expirationDate?->toDateString(),
-                'manufacturingDate' => $source->manufacturingDate?->toDateString(),
-                'status' => LotStatus::ACTIVE->value,
-                'notes' => "Traslado desde {$source->code}",
-                'receivedById' => $userId,
-            ]);
-
-            $destinationStock = $this->lockStock($product, $destination);
-
-            $in = $this->writeMovement(
-                lot: $destinationLot,
-                stock: $destinationStock,
-                type: MovementType::TRANSFER_IN,
-                units: $out->units,
-                kg: $out->kg,
-                referenceType: 'transfer',
-                referenceId: $out->movement->id,
-                userId: $userId,
-                notes: $notes,
-            );
-
-            $this->applyToStock($destinationStock, $in);
-
-            return ['out' => $out->movement, 'in' => $in, 'lot' => $destinationLot];
-        });
-    }
-
-    /**
      * Anula un lote completo: saca todo su saldo del inventario y lo marca VOID.
      * Se usa cuando la recepción fue un error (producto o cantidad equivocada).
      */
@@ -529,7 +432,7 @@ class InventoryService
     {
         return DB::transaction(function () use ($lot, $reason, $userId) {
             // Orden de bloqueo: `stock` antes de `lot` (ver consumeFromLot).
-            $stock = $this->lockStock($lot->product, $lot->warehouse);
+            $stock = $this->lockStock($lot->product);
 
             /** @var Lot $lot */
             $lot = Lot::whereKey($lot->id)->lockForUpdate()->firstOrFail();
@@ -577,7 +480,6 @@ class InventoryService
      */
     public function reserve(
         Product $product,
-        Warehouse $warehouse,
         float $units,
         float $kg,
         string $referenceType,
@@ -592,7 +494,6 @@ class InventoryService
 
         return DB::transaction(function () use (
             $product,
-            $warehouse,
             $units,
             $kg,
             $referenceType,
@@ -601,7 +502,7 @@ class InventoryService
             $userId,
             $notes,
         ) {
-            $stock = $this->lockStock($product, $warehouse);
+            $stock = $this->lockStock($product);
 
             $units = $this->scale($units);
             $kg = $product->tracksWeight() ? $this->scale($kg) : 0.0;
@@ -622,7 +523,6 @@ class InventoryService
 
             $reservation = StockReservation::create([
                 'productId' => $product->id,
-                'warehouseId' => $warehouse->id,
                 'units' => $units,
                 'kg' => $kg,
                 'status' => ReservationStatus::ACTIVE->value,
@@ -660,7 +560,7 @@ class InventoryService
                 return $reservation;
             }
 
-            $stock = $this->lockStock($reservation->product, $reservation->warehouse);
+            $stock = $this->lockStock($reservation->product);
 
             $stock->forceFill([
                 'reservedUnits' => max(0, $this->scale((float) $stock->reservedUnits - (float) $reservation->units)),
@@ -731,6 +631,19 @@ class InventoryService
             return [$units, $this->scale($units * (float) $product->netWeightKg)];
         }
 
+        if ($product->saleMode === SaleMode::BLOCK) {
+            // El bloque se cuenta por piezas y se pesa: ambos saldos son reales.
+            if ($units <= 0) {
+                throw new HttpException(422, "«{$product->name}» se maneja por bloques: indica cuántas piezas.");
+            }
+
+            if ($kg <= 0) {
+                throw new HttpException(422, "«{$product->name}» se pesa al recibir: indica los kilos.");
+            }
+
+            return [$units, $kg];
+        }
+
         if ($kg <= 0) {
             throw new HttpException(422, "«{$product->name}» se vende por peso: indica los kilos recibidos.");
         }
@@ -791,28 +704,14 @@ class InventoryService
         $product->forceFill($attributes)->save();
     }
 
-    /**
-     * Las dos bodegas ordenadas por id, para bloquear siempre en la misma secuencia.
-     *
-     * @return list<Warehouse>
-     */
-    private function orderedWarehouses(Warehouse $a, Warehouse $b): array
-    {
-        return $a->id <= $b->id ? [$a, $b] : [$b, $a];
-    }
-
     /** Fila de saldo con bloqueo pesimista; la crea si no existía. */
-    private function lockStock(Product $product, Warehouse $warehouse): Stock
+    private function lockStock(Product $product): Stock
     {
-        Stock::query()->firstOrCreate(
-            ['productId' => $product->id, 'warehouseId' => $warehouse->id],
-            [],
-        );
+        Stock::query()->firstOrCreate(['productId' => $product->id], []);
 
         /** @var Stock $stock */
         $stock = Stock::query()
             ->where('productId', $product->id)
-            ->where('warehouseId', $warehouse->id)
             ->lockForUpdate()
             ->firstOrFail();
 
@@ -820,15 +719,14 @@ class InventoryService
     }
 
     /**
-     * Lotes disponibles de un producto en una bodega, en orden FIFO y bloqueados.
+     * Lotes disponibles de un producto, en orden FIFO y bloqueados.
      *
      * @return Collection<int, Lot>
      */
-    private function lockFifoLots(Product $product, Warehouse $warehouse): Collection
+    private function lockFifoLots(Product $product): Collection
     {
         return Lot::query()
             ->where('productId', $product->id)
-            ->where('warehouseId', $warehouse->id)
             ->fifo()
             ->withStock()
             ->lockForUpdate()
@@ -935,7 +833,6 @@ class InventoryService
 
         return StockMovement::create([
             'productId' => $lot->productId,
-            'warehouseId' => $stock->warehouseId,
             'lotId' => $lot->id,
             'type' => $type->value,
             'direction' => $type->direction()->value,

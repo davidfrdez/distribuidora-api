@@ -28,7 +28,7 @@ class StockMovement extends Model
     protected $table = 'stock_movement';
 
     protected $fillable = [
-        'productId', 'warehouseId', 'lotId',
+        'productId', 'lotId',
         'type', 'direction', 'units', 'kg',
         'costPerUnit', 'costPerKg', 'totalCost',
         'unitsBefore', 'unitsAfter', 'kgBefore', 'kgAfter',
@@ -71,12 +71,6 @@ class StockMovement extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class, 'productId');
-    }
-
-    /** @return BelongsTo<Warehouse, $this> */
-    public function warehouse(): BelongsTo
-    {
-        return $this->belongsTo(Warehouse::class, 'warehouseId');
     }
 
     /** @return BelongsTo<Lot, $this> */

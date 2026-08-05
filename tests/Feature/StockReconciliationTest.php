@@ -6,7 +6,6 @@ use App\Enums\MovementType;
 use App\Models\Lot;
 use App\Models\Product;
 use App\Models\Stock;
-use App\Models\Warehouse;
 use App\Services\InventoryService;
 use App\Services\StockReconciliationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -26,20 +25,17 @@ class StockReconciliationTest extends TestCase
 
     private StockReconciliationService $reconciliation;
 
-    private Warehouse $warehouse;
-
     protected function setUp(): void
     {
         parent::setUp();
         $this->inventory = app(InventoryService::class);
         $this->reconciliation = app(StockReconciliationService::class);
-        $this->warehouse = Warehouse::factory()->create();
     }
 
     public function test_un_inventario_recien_creado_cuadra(): void
     {
         $product = Product::factory()->byWeight()->create();
-        $this->inventory->receive($product, $this->warehouse, 20, 12.5, 300000);
+        $this->inventory->receive($product, 20, 12.5, 300000);
 
         $this->assertTrue($this->reconciliation->findDiscrepancies()->isEmpty());
     }
@@ -79,7 +75,6 @@ class StockReconciliationTest extends TestCase
                     $kg = mt_rand(1000, 30000) / 1000;
                     $this->inventory->receive(
                         product: $product,
-                        warehouse: $this->warehouse,
                         units: $units,
                         kg: $kg,
                         totalCost: mt_rand(50000, 900000),
@@ -92,7 +87,6 @@ class StockReconciliationTest extends TestCase
                     // Salida FIFO por la cantidad conductora del producto.
                     $this->tryOut(fn () => $this->inventory->consumeFifo(
                         product: $product,
-                        warehouse: $this->warehouse,
                         quantity: mt_rand(100, 8000) / 1000,
                         type: $outTypes[mt_rand(0, 2)],
                         referenceType: 'test',
@@ -148,7 +142,7 @@ class StockReconciliationTest extends TestCase
     public function test_detecta_un_descuadre_provocado_por_fuera_del_servicio(): void
     {
         $product = Product::factory()->byWeight()->create();
-        $this->inventory->receive($product, $this->warehouse, 20, 12.5, 300000);
+        $this->inventory->receive($product, 20, 12.5, 300000);
 
         // Alguien toca el saldo sin pasar por el kardex: exactamente el escenario
         // que la reconciliación existe para descubrir.

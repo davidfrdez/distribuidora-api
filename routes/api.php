@@ -7,7 +7,6 @@ use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\InventorySummaryController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\UserController;
-use App\Http\Controllers\Api\WarehouseController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -61,6 +60,7 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () use ($solo
     Route::get('units', [CatalogController::class, 'units']);
     Route::get('categories', [CatalogController::class, 'categories']);
     Route::get('suppliers', [CatalogController::class, 'suppliers']);
+    Route::get('suppliers/{supplier}/catalog', [CatalogController::class, 'supplierCatalog']);
     Route::get('products', [ProductController::class, 'index']);
     Route::get('products/{product}', [ProductController::class, 'show']);
     // `lookup/{code}` recibe el código escaneado, no un id: por eso va en una
@@ -77,23 +77,10 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () use ($solo
         Route::post('products', [ProductController::class, 'store']);
         Route::put('products/{product}', [ProductController::class, 'update']);
         Route::delete('products/{product}', [ProductController::class, 'destroy']);
+        Route::post('products/{id}/restore', [ProductController::class, 'restore']);
         Route::post('products/{product}/barcodes', [CatalogController::class, 'storeBarcode']);
         Route::delete('barcodes/{barcode}', [CatalogController::class, 'destroyBarcode']);
     });
-
-    // ── Bodegas y cadena de frío ─────────────────────────────────────────────
-    Route::get('warehouses', [WarehouseController::class, 'index']);
-    Route::get('warehouse-types', [WarehouseController::class, 'types']);
-    Route::get('warehouses/{warehouse}/temperatures', [WarehouseController::class, 'temperatures']);
-
-    Route::middleware($inventario)->group(function () {
-        Route::post('warehouses', [WarehouseController::class, 'store']);
-        Route::put('warehouses/{warehouse}', [WarehouseController::class, 'update']);
-    });
-
-    // Cualquiera que trabaje en bodega debe poder anotar una lectura.
-    Route::post('warehouses/{warehouse}/temperatures', [WarehouseController::class, 'recordTemperature'])
-        ->middleware('role:SUPERADMIN,ADMINISTRADOR,ALMACENISTA,EMPACADOR,MAQUILADOR');
 
     // ── Inventario ───────────────────────────────────────────────────────────
     Route::prefix('inventory')->group(function () use ($inventario) {
@@ -105,7 +92,6 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () use ($solo
 
         Route::middleware($inventario)->group(function () {
             Route::post('receive', [InventoryController::class, 'receive']);
-            Route::post('transfer', [InventoryController::class, 'transfer']);
             Route::post('lots/{lot}/void', [InventoryController::class, 'voidLot']);
         });
 

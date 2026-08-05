@@ -5,7 +5,6 @@ namespace Database\Factories;
 use App\Enums\LotStatus;
 use App\Models\Lot;
 use App\Models\Product;
-use App\Models\Warehouse;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
@@ -27,7 +26,6 @@ class LotFactory extends Factory
 
         return [
             'productId' => Product::factory(),
-            'warehouseId' => Warehouse::factory(),
             'supplierId' => null,
             'code' => 'LOT-' . Str::upper(Str::random(8)),
             'supplierLotCode' => Str::upper(Str::random(6)),

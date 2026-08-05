@@ -22,7 +22,6 @@ return new class extends Migration
         Schema::create('stock_reservation', function (Blueprint $table) {
             $table->id();
             $table->foreignId('productId')->constrained('product')->cascadeOnDelete();
-            $table->foreignId('warehouseId')->constrained('warehouse')->cascadeOnDelete();
             $table->foreignId('lotId')->nullable()->constrained('lot')->nullOnDelete();
 
             $table->decimal('units', 16, 4)->default(0);
@@ -39,7 +38,7 @@ return new class extends Migration
             $table->timestamp('createdAt')->nullable();
             $table->timestamp('updatedAt')->nullable();
 
-            $table->index(['productId', 'warehouseId', 'status'], 'stock_reservation_index_stock');
+            $table->index(['productId', 'status'], 'stock_reservation_index_stock');
             $table->index(['referenceType', 'referenceId'], 'stock_reservation_index_reference');
             // Barrido de reservas vencidas.
             $table->index(['status', 'expiresAt'], 'stock_reservation_index_expiry');

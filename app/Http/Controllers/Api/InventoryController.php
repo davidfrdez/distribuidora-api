@@ -14,7 +14,6 @@ use App\Models\Product;
 use App\Models\Stock;
 use App\Models\StockMovement;
 use App\Models\Supplier;
-use App\Models\Warehouse;
 use App\Services\InventoryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -33,9 +32,8 @@ class InventoryController extends Controller
     public function stock(Request $request): AnonymousResourceCollection
     {
         $stock = Stock::query()
-            ->with(['product.category', 'warehouse'])
+            ->with('product.category')
             ->when($request->filled('productId'), fn ($q) => $q->where('productId', $request->integer('productId')))
-            ->when($request->filled('warehouseId'), fn ($q) => $q->where('warehouseId', $request->integer('warehouseId')))
             ->when($request->boolean('withStockOnly'), fn ($q) => $q->where(
                 fn ($sub) => $sub->where('currentUnits', '>', 0)->orWhere('currentKg', '>', 0),
             ))
@@ -60,9 +58,8 @@ class InventoryController extends Controller
     public function lots(Request $request): AnonymousResourceCollection
     {
         $lots = Lot::query()
-            ->with(['product', 'warehouse', 'supplier'])
+            ->with(['product', 'supplier'])
             ->when($request->filled('productId'), fn ($q) => $q->where('productId', $request->integer('productId')))
-            ->when($request->filled('warehouseId'), fn ($q) => $q->where('warehouseId', $request->integer('warehouseId')))
             ->when($request->filled('supplierId'), fn ($q) => $q->where('supplierId', $request->integer('supplierId')))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->when($request->filled('supplierLotCode'), fn ($q) => $q->where('supplierLotCode', $request->string('supplierLotCode')))
@@ -83,9 +80,8 @@ class InventoryController extends Controller
     public function kardex(Request $request): AnonymousResourceCollection
     {
         $movements = StockMovement::query()
-            ->with(['product', 'warehouse', 'lot'])
+            ->with(['product', 'lot'])
             ->when($request->filled('productId'), fn ($q) => $q->where('productId', $request->integer('productId')))
-            ->when($request->filled('warehouseId'), fn ($q) => $q->where('warehouseId', $request->integer('warehouseId')))
             ->when($request->filled('lotId'), fn ($q) => $q->where('lotId', $request->integer('lotId')))
             ->when($request->filled('type'), fn ($q) => $q->where('type', $request->string('type')))
             ->when($request->filled('from'), fn ($q) => $q->where('movementDate', '>=', $request->date('from')))
@@ -106,10 +102,9 @@ class InventoryController extends Controller
      */
     public function traceLot(Lot $lot): JsonResponse
     {
-        $lot->load(['product', 'warehouse', 'supplier']);
+        $lot->load(['product', 'supplier']);
 
         $movements = $lot->movements()
-            ->with(['warehouse'])
             ->orderBy('movementDate')
             ->get();
 
@@ -147,7 +142,6 @@ class InventoryController extends Controller
 
         $lot = $this->inventory->receive(
             product: Product::findOrFail($data['productId']),
-            warehouse: Warehouse::findOrFail($data['warehouseId']),
             units: (float) ($data['units'] ?? 0),
             kg: (float) ($data['kg'] ?? 0),
             totalCost: (float) $data['totalCost'],
@@ -161,39 +155,9 @@ class InventoryController extends Controller
             notes: $data['notes'] ?? null,
         );
 
-        return (new LotResource($lot->load(['product', 'warehouse', 'supplier'])))
+        return (new LotResource($lot->load(['product', 'supplier'])))
             ->response()
             ->setStatusCode(201);
-    }
-
-    /** POST /api/admin/inventory/transfer */
-    public function transfer(Request $request): JsonResponse
-    {
-        $data = $request->validate([
-            'lotId' => ['required', 'integer', 'exists:lot,id'],
-            'destinationWarehouseId' => ['required', 'integer', 'exists:warehouse,id'],
-            'units' => ['required', 'numeric', 'min:0'],
-            'kg' => ['required', 'numeric', 'min:0'],
-            'notes' => ['nullable', 'string', 'max:500'],
-        ]);
-
-        $result = $this->inventory->transfer(
-            lot: Lot::findOrFail($data['lotId']),
-            destination: Warehouse::findOrFail($data['destinationWarehouseId']),
-            units: (float) $data['units'],
-            kg: (float) $data['kg'],
-            userId: $request->user()->id,
-            notes: $data['notes'] ?? null,
-        );
-
-        return response()->json([
-            'message' => 'Traslado registrado.',
-            'destinationLot' => new LotResource($result['lot']->load(['product', 'warehouse'])),
-            'movements' => [
-                'out' => new StockMovementResource($result['out']),
-                'in' => new StockMovementResource($result['in']),
-            ],
-        ], 201);
     }
 
     /** POST /api/admin/inventory/adjust */
@@ -216,7 +180,7 @@ class InventoryController extends Controller
 
         return response()->json([
             'message' => 'Ajuste registrado.',
-            'movement' => new StockMovementResource($movement->load(['product', 'warehouse', 'lot'])),
+            'movement' => new StockMovementResource($movement->load(['product', 'lot'])),
         ], 201);
     }
 
@@ -243,7 +207,7 @@ class InventoryController extends Controller
 
         return response()->json([
             'message' => 'Merma registrada.',
-            'movement' => new StockMovementResource($line->movement->load(['product', 'warehouse', 'lot'])),
+            'movement' => new StockMovementResource($line->movement->load(['product', 'lot'])),
         ], 201);
     }
 
@@ -258,7 +222,7 @@ class InventoryController extends Controller
 
         return response()->json([
             'message' => 'Lote anulado.',
-            'lot' => new LotResource($lot->load(['product', 'warehouse'])),
+            'lot' => new LotResource($lot->load('product')),
         ]);
     }
 }

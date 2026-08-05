@@ -6,7 +6,6 @@ use App\Enums\MovementType;
 use App\Models\Lot;
 use App\Models\Product;
 use App\Models\StockMovement;
-use App\Models\Warehouse;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -25,7 +24,6 @@ class StockMovementFactory extends Factory
 
         return [
             'productId' => Product::factory(),
-            'warehouseId' => Warehouse::factory(),
             'lotId' => Lot::factory(),
             'type' => $type->value,
             'direction' => $type->direction()->value,

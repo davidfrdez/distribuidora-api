@@ -10,7 +10,6 @@ use App\Models\Product;
 use App\Models\Stock;
 use App\Models\StockMovement;
 use App\Models\Supplier;
-use App\Models\Warehouse;
 use App\Services\InventoryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -22,13 +21,10 @@ class InventoryServiceTest extends TestCase
 
     private InventoryService $service;
 
-    private Warehouse $warehouse;
-
     protected function setUp(): void
     {
         parent::setUp();
         $this->service = app(InventoryService::class);
-        $this->warehouse = Warehouse::factory()->create();
     }
 
     private function product(string $state = 'byWeight', array $attributes = []): Product
@@ -36,11 +32,10 @@ class InventoryServiceTest extends TestCase
         return Product::factory()->{$state}()->create($attributes);
     }
 
-    private function stockOf(Product $product, ?Warehouse $warehouse = null): Stock
+    private function stockOf(Product $product): Stock
     {
         return Stock::query()
             ->where('productId', $product->id)
-            ->where('warehouseId', ($warehouse ?? $this->warehouse)->id)
             ->firstOrFail();
     }
 
@@ -54,7 +49,6 @@ class InventoryServiceTest extends TestCase
         // Una canastilla: 20 chorizos, 12,5 kg, $300.000.
         $lot = $this->service->receive(
             product: $chorizo,
-            warehouse: $this->warehouse,
             units: 20,
             kg: 12.5,
             totalCost: 300000,
@@ -86,7 +80,7 @@ class InventoryServiceTest extends TestCase
     {
         $chorizo = $this->product('byWeight', ['shelfLifeDays' => 30]);
 
-        $lot = $this->service->receive($chorizo, $this->warehouse, 10, 5, 100000);
+        $lot = $this->service->receive($chorizo, 10, 5, 100000);
 
         $this->assertSame(now()->addDays(30)->toDateString(), $lot->expirationDate->toDateString());
     }
@@ -97,11 +91,21 @@ class InventoryServiceTest extends TestCase
         $fabricacion = now()->subDays(10);
 
         $lot = $this->service->receive(
-            $chorizo, $this->warehouse, 10, 5, 100000,
+            $chorizo, 10, 5, 100000,
             manufacturingDate: $fabricacion,
         );
 
         $this->assertSame($fabricacion->copy()->addDays(30)->toDateString(), $lot->expirationDate->toDateString());
+    }
+
+    public function test_un_lote_puede_recibirse_sin_vencimiento(): void
+    {
+        // Sin vida útil configurada y sin fecha explícita, el lote no caduca.
+        $chorizo = $this->product('byWeight', ['shelfLifeDays' => null]);
+
+        $lot = $this->service->receive($chorizo, 10, 5, 100000);
+
+        $this->assertNull($lot->expirationDate);
     }
 
     public function test_un_paquete_de_peso_fijo_deriva_el_peso_de_las_unidades(): void
@@ -109,17 +113,55 @@ class InventoryServiceTest extends TestCase
         $paquete = $this->product('fixedPack', ['netWeightKg' => 0.5]);
 
         // Aunque se pase un peso distinto, manda netWeightKg × unidades.
-        $lot = $this->service->receive($paquete, $this->warehouse, 24, 999, 348000);
+        $lot = $this->service->receive($paquete, 24, 999, 348000);
 
         $this->assertSame('24.0000', $lot->currentUnits);
         $this->assertSame('12.0000', $lot->currentKg);
+    }
+
+    public function test_un_bloque_lleva_piezas_y_peso_real(): void
+    {
+        // 3 bloques de queso que juntos pesan 7,2 kg.
+        $queso = $this->product('block');
+
+        $lot = $this->service->receive($queso, 3, 7.2, 90000);
+
+        $this->assertSame('3.0000', $lot->currentUnits);
+        $this->assertSame('7.2000', $lot->currentKg);
+        // El costo se lleva por pieza (driver del bloque = unidades).
+        $this->assertSame('30000.0000', $lot->costPerUnit);   // 90.000 / 3
+        $this->assertSame('7.2000', $this->stockOf($queso)->currentKg);
+    }
+
+    public function test_un_bloque_sin_peso_falla(): void
+    {
+        $this->expectException(HttpException::class);
+        $this->expectExceptionMessage('se pesa al recibir');
+
+        $this->service->receive($this->product('block'), 2, 0, 60000);
+    }
+
+    public function test_un_bloque_se_despacha_por_pieza_con_el_peso_real(): void
+    {
+        $queso = $this->product('block');
+        $lot = $this->service->receive($queso, 3, 7.2, 90000);
+
+        // El empacador saca 1 bloque que pesó 2,53 kg (peso real, no proporcional).
+        $line = $this->service->consumeFromLot(
+            $lot, 1, 2.53, MovementType::SALE, 'order', 1,
+        );
+
+        $this->assertSame(1.0, $line->units);
+        $this->assertSame(2.53, $line->kg);
+        $this->assertSame('2.0000', $lot->refresh()->currentUnits);
+        $this->assertSame('4.6700', $lot->currentKg);
     }
 
     public function test_un_producto_por_unidad_no_lleva_saldo_en_kg(): void
     {
         $queso = $this->product('byUnit');
 
-        $lot = $this->service->receive($queso, $this->warehouse, 12, 8, 180000);
+        $lot = $this->service->receive($queso, 12, 8, 180000);
 
         $this->assertSame('0.0000', $lot->currentKg);
         $this->assertSame('15000.0000', $lot->costPerUnit);
@@ -131,7 +173,7 @@ class InventoryServiceTest extends TestCase
         $this->expectException(HttpException::class);
         $this->expectExceptionMessage('se vende por peso');
 
-        $this->service->receive($this->product('byWeight'), $this->warehouse, 10, 0, 100000);
+        $this->service->receive($this->product('byWeight'), 10, 0, 100000);
     }
 
     public function test_recibir_por_unidad_sin_unidades_falla(): void
@@ -139,7 +181,7 @@ class InventoryServiceTest extends TestCase
         $this->expectException(HttpException::class);
         $this->expectExceptionMessage('se maneja por unidad');
 
-        $this->service->receive($this->product('byUnit'), $this->warehouse, 0, 5, 100000);
+        $this->service->receive($this->product('byUnit'), 0, 5, 100000);
     }
 
     public function test_el_costo_promedio_se_pondera_entre_recepciones(): void
@@ -150,8 +192,8 @@ class InventoryServiceTest extends TestCase
         ]);
 
         // 10 kg a $20.000/kg, después 10 kg a $30.000/kg → promedio $25.000.
-        $this->service->receive($chorizo, $this->warehouse, 10, 10, 200000);
-        $this->service->receive($chorizo, $this->warehouse, 10, 10, 300000);
+        $this->service->receive($chorizo, 10, 10, 200000);
+        $this->service->receive($chorizo, 10, 10, 300000);
 
         $chorizo->refresh();
         $this->assertSame('25000.0000', $chorizo->averageCostPerKg);
@@ -164,11 +206,11 @@ class InventoryServiceTest extends TestCase
     {
         $chorizo = $this->product('byWeight', ['shelfLifeDays' => null]);
 
-        $tarde = $this->service->receive($chorizo, $this->warehouse, 10, 10, 200000, expirationDate: now()->addDays(30));
-        $pronto = $this->service->receive($chorizo, $this->warehouse, 10, 10, 200000, expirationDate: now()->addDays(5));
+        $tarde = $this->service->receive($chorizo, 10, 10, 200000, expirationDate: now()->addDays(30));
+        $pronto = $this->service->receive($chorizo, 10, 10, 200000, expirationDate: now()->addDays(5));
 
         $lines = $this->service->consumeFifo(
-            $chorizo, $this->warehouse, 4, MovementType::SALE, 'order', 1,
+            $chorizo, 4, MovementType::SALE, 'order', 1,
         );
 
         $this->assertCount(1, $lines);
@@ -182,23 +224,37 @@ class InventoryServiceTest extends TestCase
     {
         $chorizo = $this->product('byWeight', ['shelfLifeDays' => null]);
 
-        $sinFecha = $this->service->receive($chorizo, $this->warehouse, 10, 10, 200000);
-        $conFecha = $this->service->receive($chorizo, $this->warehouse, 10, 10, 200000, expirationDate: now()->addDays(60));
+        $sinFecha = $this->service->receive($chorizo, 10, 10, 200000);
+        $conFecha = $this->service->receive($chorizo, 10, 10, 200000, expirationDate: now()->addDays(60));
 
-        $lines = $this->service->consumeFifo($chorizo, $this->warehouse, 3, MovementType::SALE, 'order', 1);
+        $lines = $this->service->consumeFifo($chorizo, 3, MovementType::SALE, 'order', 1);
 
         $this->assertSame($conFecha->id, $lines[0]->lot->id);
         $this->assertSame('10.0000', $sinFecha->refresh()->currentKg);
+    }
+
+    public function test_entre_lotes_sin_vencimiento_manda_la_fecha_de_ingreso(): void
+    {
+        // Ninguno caduca: el más antiguo por recepción sale primero (FIFO puro).
+        $chorizo = $this->product('byWeight', ['shelfLifeDays' => null]);
+
+        $viejo = $this->service->receive($chorizo, 10, 10, 200000, receivedAt: now()->subDays(3));
+        $nuevo = $this->service->receive($chorizo, 10, 10, 200000, receivedAt: now());
+
+        $lines = $this->service->consumeFifo($chorizo, 4, MovementType::SALE, 'order', 1);
+
+        $this->assertSame($viejo->id, $lines[0]->lot->id);
+        $this->assertSame('10.0000', $nuevo->refresh()->currentKg);
     }
 
     public function test_el_fifo_reparte_la_salida_entre_varios_lotes(): void
     {
         $chorizo = $this->product('byWeight', ['shelfLifeDays' => null]);
 
-        $primero = $this->service->receive($chorizo, $this->warehouse, 20, 10, 200000, expirationDate: now()->addDays(5));
-        $segundo = $this->service->receive($chorizo, $this->warehouse, 20, 10, 300000, expirationDate: now()->addDays(20));
+        $primero = $this->service->receive($chorizo, 20, 10, 200000, expirationDate: now()->addDays(5));
+        $segundo = $this->service->receive($chorizo, 20, 10, 300000, expirationDate: now()->addDays(20));
 
-        $lines = $this->service->consumeFifo($chorizo, $this->warehouse, 14, MovementType::SALE, 'order', 1);
+        $lines = $this->service->consumeFifo($chorizo, 14, MovementType::SALE, 'order', 1);
 
         $this->assertCount(2, $lines);
         $this->assertSame(10.0, $lines[0]->kg);   // agota el primero
@@ -219,10 +275,10 @@ class InventoryServiceTest extends TestCase
         $chorizo = $this->product('byWeight', ['shelfLifeDays' => null]);
 
         // Lote barato que vence primero, lote caro después.
-        $this->service->receive($chorizo, $this->warehouse, 10, 10, 200000, expirationDate: now()->addDays(5));
-        $this->service->receive($chorizo, $this->warehouse, 10, 10, 400000, expirationDate: now()->addDays(30));
+        $this->service->receive($chorizo, 10, 10, 200000, expirationDate: now()->addDays(5));
+        $this->service->receive($chorizo, 10, 10, 400000, expirationDate: now()->addDays(30));
 
-        $lines = $this->service->consumeFifo($chorizo, $this->warehouse, 5, MovementType::SALE, 'order', 1);
+        $lines = $this->service->consumeFifo($chorizo, 5, MovementType::SALE, 'order', 1);
 
         // 5 kg del lote barato a $20.000/kg = $100.000, no el promedio de $30.000.
         $this->assertSame(100000.0, $lines[0]->cost);
@@ -231,34 +287,34 @@ class InventoryServiceTest extends TestCase
     public function test_no_deja_consumir_mas_de_lo_que_hay(): void
     {
         $chorizo = $this->product('byWeight', ['name' => 'Chorizo Ahumado']);
-        $this->service->receive($chorizo, $this->warehouse, 10, 5, 100000);
+        $this->service->receive($chorizo, 10, 5, 100000);
 
         $this->expectException(HttpException::class);
         $this->expectExceptionMessage('Stock insuficiente');
 
-        $this->service->consumeFifo($chorizo, $this->warehouse, 6, MovementType::SALE, 'order', 1);
+        $this->service->consumeFifo($chorizo, 6, MovementType::SALE, 'order', 1);
     }
 
     public function test_ignora_lotes_vencidos_o_en_cuarentena(): void
     {
         $chorizo = $this->product('byWeight', ['shelfLifeDays' => null]);
 
-        $vencido = $this->service->receive($chorizo, $this->warehouse, 10, 10, 200000, expirationDate: now()->addDay());
+        $vencido = $this->service->receive($chorizo, 10, 10, 200000, expirationDate: now()->addDay());
         $vencido->forceFill(['status' => LotStatus::EXPIRED->value])->save();
 
-        $retenido = $this->service->receive($chorizo, $this->warehouse, 10, 10, 200000, expirationDate: now()->addDays(2));
+        $retenido = $this->service->receive($chorizo, 10, 10, 200000, expirationDate: now()->addDays(2));
         $retenido->forceFill(['status' => LotStatus::QUARANTINE->value])->save();
 
-        $bueno = $this->service->receive($chorizo, $this->warehouse, 10, 10, 200000, expirationDate: now()->addDays(30));
+        $bueno = $this->service->receive($chorizo, 10, 10, 200000, expirationDate: now()->addDays(30));
 
-        $lines = $this->service->consumeFifo($chorizo, $this->warehouse, 10, MovementType::SALE, 'order', 1);
+        $lines = $this->service->consumeFifo($chorizo, 10, MovementType::SALE, 'order', 1);
 
         $this->assertCount(1, $lines);
         $this->assertSame($bueno->id, $lines[0]->lot->id);
 
         // Y no puede consumir más, aunque haya 30 kg físicos en la bodega.
         $this->expectException(HttpException::class);
-        $this->service->consumeFifo($chorizo, $this->warehouse, 1, MovementType::SALE, 'order', 2);
+        $this->service->consumeFifo($chorizo, 1, MovementType::SALE, 'order', 2);
     }
 
     public function test_una_entrada_no_puede_usarse_como_consumo(): void
@@ -268,7 +324,7 @@ class InventoryServiceTest extends TestCase
         $this->expectException(HttpException::class);
         $this->expectExceptionMessage('no es una salida de inventario');
 
-        $this->service->consumeFifo($chorizo, $this->warehouse, 1, MovementType::PURCHASE, 'order', 1);
+        $this->service->consumeFifo($chorizo, 1, MovementType::PURCHASE, 'order', 1);
     }
 
     // ── Consumo de un lote concreto ──────────────────────────────────────────
@@ -276,7 +332,7 @@ class InventoryServiceTest extends TestCase
     public function test_descuenta_de_un_lote_elegido_con_el_peso_real(): void
     {
         $chorizo = $this->product('byWeight');
-        $lot = $this->service->receive($chorizo, $this->warehouse, 20, 12.5, 300000);
+        $lot = $this->service->receive($chorizo, 20, 12.5, 300000);
 
         // El empacador pesó 2,140 kg de 3 chorizos: es el peso real, no una regla de tres.
         $line = $this->service->consumeFromLot(
@@ -293,7 +349,7 @@ class InventoryServiceTest extends TestCase
     public function test_no_deja_descontar_mas_de_lo_que_tiene_el_lote(): void
     {
         $chorizo = $this->product('byWeight');
-        $lot = $this->service->receive($chorizo, $this->warehouse, 20, 12.5, 300000);
+        $lot = $this->service->receive($chorizo, 20, 12.5, 300000);
 
         $this->expectException(HttpException::class);
         $this->expectExceptionMessage('kg; se pidieron');
@@ -304,7 +360,7 @@ class InventoryServiceTest extends TestCase
     public function test_un_lote_en_cuarentena_no_despacha(): void
     {
         $chorizo = $this->product('byWeight');
-        $lot = $this->service->receive($chorizo, $this->warehouse, 20, 12.5, 300000);
+        $lot = $this->service->receive($chorizo, 20, 12.5, 300000);
         $lot->forceFill(['status' => LotStatus::QUARANTINE->value])->save();
 
         $this->expectException(HttpException::class);
@@ -318,7 +374,7 @@ class InventoryServiceTest extends TestCase
     public function test_el_kardex_no_se_puede_editar(): void
     {
         $chorizo = $this->product('byWeight');
-        $this->service->receive($chorizo, $this->warehouse, 10, 5, 100000);
+        $this->service->receive($chorizo, 10, 5, 100000);
 
         $movement = StockMovement::firstOrFail();
 
@@ -331,7 +387,7 @@ class InventoryServiceTest extends TestCase
     public function test_el_kardex_no_se_puede_borrar(): void
     {
         $chorizo = $this->product('byWeight');
-        $this->service->receive($chorizo, $this->warehouse, 10, 5, 100000);
+        $this->service->receive($chorizo, 10, 5, 100000);
 
         $movement = StockMovement::firstOrFail();
 
@@ -344,9 +400,9 @@ class InventoryServiceTest extends TestCase
     public function test_una_reserva_baja_el_disponible_sin_tocar_el_saldo(): void
     {
         $chorizo = $this->product('byWeight');
-        $this->service->receive($chorizo, $this->warehouse, 20, 12.5, 300000);
+        $this->service->receive($chorizo, 20, 12.5, 300000);
 
-        $this->service->reserve($chorizo, $this->warehouse, 5, 3, 'order', 77);
+        $this->service->reserve($chorizo, 5, 3, 'order', 77);
 
         $stock = $this->stockOf($chorizo);
         $this->assertSame('12.5000', $stock->currentKg);   // el stock sigue ahí
@@ -357,20 +413,20 @@ class InventoryServiceTest extends TestCase
     public function test_no_se_puede_reservar_mas_de_lo_disponible(): void
     {
         $chorizo = $this->product('byWeight', ['name' => 'Tocineta Ahumada']);
-        $this->service->receive($chorizo, $this->warehouse, 20, 12.5, 300000);
-        $this->service->reserve($chorizo, $this->warehouse, 5, 10, 'order', 1);
+        $this->service->receive($chorizo, 20, 12.5, 300000);
+        $this->service->reserve($chorizo, 5, 10, 'order', 1);
 
         $this->expectException(HttpException::class);
         $this->expectExceptionMessage('kg disponibles');
 
-        $this->service->reserve($chorizo, $this->warehouse, 1, 5, 'order', 2);
+        $this->service->reserve($chorizo, 1, 5, 'order', 2);
     }
 
     public function test_liberar_una_reserva_devuelve_el_disponible(): void
     {
         $chorizo = $this->product('byWeight');
-        $this->service->receive($chorizo, $this->warehouse, 20, 12.5, 300000);
-        $reserva = $this->service->reserve($chorizo, $this->warehouse, 5, 3, 'order', 1);
+        $this->service->receive($chorizo, 20, 12.5, 300000);
+        $reserva = $this->service->reserve($chorizo, 5, 3, 'order', 1);
 
         $this->service->releaseReservation($reserva);
 
@@ -383,8 +439,8 @@ class InventoryServiceTest extends TestCase
     public function test_liberar_dos_veces_no_devuelve_el_stock_dos_veces(): void
     {
         $chorizo = $this->product('byWeight');
-        $this->service->receive($chorizo, $this->warehouse, 20, 12.5, 300000);
-        $reserva = $this->service->reserve($chorizo, $this->warehouse, 5, 3, 'order', 1);
+        $this->service->receive($chorizo, 20, 12.5, 300000);
+        $reserva = $this->service->reserve($chorizo, 5, 3, 'order', 1);
 
         $this->service->releaseReservation($reserva);
         $this->service->releaseReservation($reserva);
@@ -395,14 +451,14 @@ class InventoryServiceTest extends TestCase
     public function test_las_reservas_vencidas_se_liberan_solas(): void
     {
         $chorizo = $this->product('byWeight');
-        $this->service->receive($chorizo, $this->warehouse, 20, 12.5, 300000);
+        $this->service->receive($chorizo, 20, 12.5, 300000);
 
         $vencida = $this->service->reserve(
-            $chorizo, $this->warehouse, 5, 3, 'order', 1,
+            $chorizo, 5, 3, 'order', 1,
             expiresAt: now()->subHour(),
         );
         $vigente = $this->service->reserve(
-            $chorizo, $this->warehouse, 2, 1, 'order', 2,
+            $chorizo, 2, 1, 'order', 2,
             expiresAt: now()->addHour(),
         );
 
@@ -414,12 +470,12 @@ class InventoryServiceTest extends TestCase
         $this->assertSame('1.0000', $this->stockOf($chorizo)->reservedKg);
     }
 
-    // ── Ajustes, traslados y anulación ───────────────────────────────────────
+    // ── Ajustes y anulación ──────────────────────────────────────────────────
 
     public function test_un_ajuste_negativo_descuenta_del_lote(): void
     {
         $chorizo = $this->product('byWeight');
-        $lot = $this->service->receive($chorizo, $this->warehouse, 20, 12.5, 300000);
+        $lot = $this->service->receive($chorizo, 20, 12.5, 300000);
 
         $this->service->adjust($lot, 0, -0.5, 'Conteo físico: faltaban 500 g');
 
@@ -430,7 +486,7 @@ class InventoryServiceTest extends TestCase
     public function test_un_ajuste_no_puede_sumar_en_un_saldo_y_restar_en_el_otro(): void
     {
         $chorizo = $this->product('byWeight');
-        $lot = $this->service->receive($chorizo, $this->warehouse, 20, 12.5, 300000);
+        $lot = $this->service->receive($chorizo, 20, 12.5, 300000);
 
         $this->expectException(HttpException::class);
         $this->expectExceptionMessage('Registra dos ajustes');
@@ -441,7 +497,7 @@ class InventoryServiceTest extends TestCase
     public function test_un_ajuste_no_puede_dejar_el_lote_en_negativo(): void
     {
         $chorizo = $this->product('byWeight');
-        $lot = $this->service->receive($chorizo, $this->warehouse, 20, 12.5, 300000);
+        $lot = $this->service->receive($chorizo, 20, 12.5, 300000);
 
         $this->expectException(HttpException::class);
         $this->expectExceptionMessage('en negativo');
@@ -449,48 +505,10 @@ class InventoryServiceTest extends TestCase
         $this->service->adjust($lot, 0, -20, 'Imposible');
     }
 
-    public function test_el_traslado_crea_un_lote_en_destino_conservando_la_trazabilidad(): void
-    {
-        $chorizo = $this->product('byWeight', ['shelfLifeDays' => null]);
-        $proveedor = Supplier::factory()->create();
-        $congelador = Warehouse::factory()->create();
-
-        $origen = $this->service->receive(
-            $chorizo, $this->warehouse, 20, 12.5, 300000,
-            supplier: $proveedor,
-            supplierLotCode: 'FAB-9001',
-            expirationDate: now()->addDays(45),
-        );
-
-        $result = $this->service->transfer($origen, $congelador, 8, 5);
-
-        $destino = $result['lot'];
-        $this->assertSame($congelador->id, $destino->warehouseId);
-        $this->assertSame('FAB-9001', $destino->supplierLotCode);
-        $this->assertSame($proveedor->id, $destino->supplierId);
-        $this->assertSame($origen->expirationDate->toDateString(), $destino->expirationDate->toDateString());
-        $this->assertSame('5.0000', $destino->currentKg);
-
-        $this->assertSame('7.5000', $origen->refresh()->currentKg);
-        $this->assertSame('7.5000', $this->stockOf($chorizo)->currentKg);
-        $this->assertSame('5.0000', $this->stockOf($chorizo, $congelador)->currentKg);
-    }
-
-    public function test_no_se_puede_trasladar_a_la_misma_bodega(): void
-    {
-        $chorizo = $this->product('byWeight');
-        $lot = $this->service->receive($chorizo, $this->warehouse, 20, 12.5, 300000);
-
-        $this->expectException(HttpException::class);
-        $this->expectExceptionMessage('la misma bodega');
-
-        $this->service->transfer($lot, $this->warehouse, 1, 1);
-    }
-
     public function test_anular_un_lote_saca_todo_su_saldo(): void
     {
         $chorizo = $this->product('byWeight');
-        $lot = $this->service->receive($chorizo, $this->warehouse, 20, 12.5, 300000);
+        $lot = $this->service->receive($chorizo, 20, 12.5, 300000);
 
         $this->service->voidLot($lot, 'Se recibió el producto equivocado');
 
@@ -499,5 +517,4 @@ class InventoryServiceTest extends TestCase
         $this->assertSame('0.0000', $lot->currentUnits);
         $this->assertSame('0.0000', $this->stockOf($chorizo)->currentKg);
     }
-
 }

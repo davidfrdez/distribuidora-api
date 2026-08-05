@@ -7,7 +7,6 @@ use App\Enums\MovementType;
 use App\Models\Lot;
 use App\Models\Stock;
 use App\Models\StockMovement;
-use App\Models\TemperatureLog;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
@@ -26,9 +25,6 @@ class InventorySummaryService
 {
     /** Ventana de alerta de vencimiento próximo, fija para el dashboard. */
     private const EXPIRING_SOON_DAYS = 7;
-
-    /** Ventana de revisión de desviaciones de cadena de frío. */
-    private const COLD_CHAIN_WINDOW_HOURS = 24;
 
     private const TOP_EXPIRING_LIMIT = 5;
 
@@ -122,10 +118,6 @@ class InventorySummaryService
             'belowMinimum' => $this->belowMinimumQuery()->count(),
             'expiringSoon' => $this->expiringSoonQuery($today)->count(),
             'expired' => $this->expiredQuery($today)->count(),
-            'coldChainDeviations24h' => TemperatureLog::query()
-                ->where('outOfRange', true)
-                ->where('recordedAt', '>=', now()->subHours(self::COLD_CHAIN_WINDOW_HOURS))
-                ->count(),
         ];
     }
 
@@ -172,7 +164,7 @@ class InventorySummaryService
     private function topExpiring(): array
     {
         return Lot::query()
-            ->with(['product:id,name', 'warehouse:id,name'])
+            ->with('product:id,name')
             ->withStock()
             ->whereNotNull('expirationDate')
             ->orderBy('expirationDate')
@@ -182,7 +174,6 @@ class InventorySummaryService
             ->map(fn (Lot $lot) => [
                 'code' => $lot->code,
                 'productName' => $lot->product->name,
-                'warehouseName' => $lot->warehouse->name,
                 'expirationDate' => $lot->expirationDate?->toDateString(),
                 'daysToExpiration' => $lot->daysToExpiration(),
                 'currentKg' => (float) $lot->currentKg,
@@ -197,7 +188,7 @@ class InventorySummaryService
     private function lowStock(): array
     {
         return $this->belowMinimumQuery()
-            ->with(['product:id,sku,name,minStockKg,minStockUnits', 'warehouse:id,code'])
+            ->with('product:id,sku,name,minStockKg,minStockUnits')
             ->orderBy('productId')
             ->limit(self::LOW_STOCK_LIMIT)
             ->get()
@@ -208,7 +199,6 @@ class InventorySummaryService
                 'minStockKg' => (float) $stock->product->minStockKg,
                 'currentUnits' => (float) $stock->currentUnits,
                 'minStockUnits' => (float) $stock->product->minStockUnits,
-                'warehouseCode' => $stock->warehouse->code,
             ])
             ->all();
     }

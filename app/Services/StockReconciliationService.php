@@ -12,7 +12,7 @@ use Illuminate\Support\Collection;
  * Compara las TRES fuentes de verdad del inventario:
  *
  *   1. `stock`                  → saldo desnormalizado (el que se consulta)
- *   2. `SUM(lot.current*)`      → suma de los lotes de la bodega
+ *   2. `SUM(lot.current*)`      → suma de los lotes del producto
  *   3. `SUM(stock_movement)`    → el kardex, con signo según la dirección
  *
  * El sistema mantiene las tres en la misma transacción, así que en condiciones
@@ -30,34 +30,34 @@ class StockReconciliationService
     private const EPSILON = 0.00005;
 
     /**
-     * Revisa todas las combinaciones (producto, bodega) con saldo o movimientos.
+     * Revisa todos los productos con saldo o movimientos.
      *
      * @return Collection<int, StockDiscrepancy>
      */
     public function findDiscrepancies(): Collection
     {
-        $stocks = Stock::query()->with(['product', 'warehouse'])->get();
+        $stocks = Stock::query()->with('product')->get();
 
         $lotSums = Lot::query()
-            ->selectRaw('productId, warehouseId, SUM(currentUnits) AS units, SUM(currentKg) AS kg')
-            ->groupBy('productId', 'warehouseId')
+            ->selectRaw('productId, SUM(currentUnits) AS units, SUM(currentKg) AS kg')
+            ->groupBy('productId')
             ->get()
-            ->keyBy(fn ($row) => "{$row->productId}:{$row->warehouseId}");
+            ->keyBy('productId');
 
         $movementSums = StockMovement::query()
             ->selectRaw(
-                "productId, warehouseId,
+                "productId,
                  SUM(CASE WHEN direction = 'IN' THEN units ELSE -units END) AS units,
                  SUM(CASE WHEN direction = 'IN' THEN kg ELSE -kg END) AS kg",
             )
-            ->groupBy('productId', 'warehouseId')
+            ->groupBy('productId')
             ->get()
-            ->keyBy(fn ($row) => "{$row->productId}:{$row->warehouseId}");
+            ->keyBy('productId');
 
         $discrepancies = new Collection;
 
         foreach ($stocks as $stock) {
-            $key = "{$stock->productId}:{$stock->warehouseId}";
+            $key = $stock->productId;
 
             $stockUnits = (float) $stock->currentUnits;
             $stockKg = (float) $stock->currentKg;
@@ -77,9 +77,7 @@ class StockReconciliationService
 
             $discrepancies->push(new StockDiscrepancy(
                 productId: $stock->productId,
-                warehouseId: $stock->warehouseId,
                 productSku: (string) ($stock->product->sku ?? '?'),
-                warehouseCode: (string) ($stock->warehouse->code ?? '?'),
                 stockUnits: $stockUnits,
                 lotUnits: $lotUnits,
                 movementUnits: $movementUnits,

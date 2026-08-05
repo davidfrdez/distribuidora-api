@@ -3,16 +3,13 @@
 namespace App\Support;
 
 /**
- * Divergencia detectada entre las tres fuentes del inventario para una
- * combinación (producto, bodega).
+ * Divergencia detectada entre las tres fuentes del inventario para un producto.
  */
 final readonly class StockDiscrepancy
 {
     public function __construct(
         public int $productId,
-        public int $warehouseId,
         public string $productSku,
-        public string $warehouseCode,
         public float $stockUnits,
         public float $lotUnits,
         public float $movementUnits,
@@ -27,8 +24,6 @@ final readonly class StockDiscrepancy
         return [
             'productId' => $this->productId,
             'productSku' => $this->productSku,
-            'warehouseId' => $this->warehouseId,
-            'warehouseCode' => $this->warehouseCode,
             'units' => [
                 'stock' => $this->stockUnits,
                 'lots' => $this->lotUnits,
@@ -45,9 +40,8 @@ final readonly class StockDiscrepancy
     public function summary(): string
     {
         return sprintf(
-            '%s en %s — unidades: stock %s / lotes %s / kardex %s; kg: stock %s / lotes %s / kardex %s',
+            '%s — unidades: stock %s / lotes %s / kardex %s; kg: stock %s / lotes %s / kardex %s',
             $this->productSku,
-            $this->warehouseCode,
             $this->stockUnits,
             $this->lotUnits,
             $this->movementUnits,

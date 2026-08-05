@@ -13,8 +13,8 @@ use Illuminate\Support\Facades\Schema;
  * origen; en cárnicos eso destruye la trazabilidad. Sin lote no hay movimiento.
  *
  * Las cantidades se guardan siempre POSITIVAS; el signo lo da `direction`.
- * Los `*Before` / `*After` son el saldo de la combinación (producto, bodega)
- * antes y después, para poder auditar el kardex línea por línea.
+ * Los `*Before` / `*After` son el saldo GLOBAL del producto antes y después,
+ * para poder auditar el kardex línea por línea.
  */
 return new class extends Migration
 {
@@ -23,7 +23,6 @@ return new class extends Migration
         Schema::create('stock_movement', function (Blueprint $table) {
             $table->id();
             $table->foreignId('productId')->constrained('product');
-            $table->foreignId('warehouseId')->constrained('warehouse');
             $table->foreignId('lotId')->constrained('lot');   // OBLIGATORIO
 
             $table->string('type', 30);          // MovementType
@@ -51,7 +50,7 @@ return new class extends Migration
             $table->timestamp('createdAt')->nullable();
             $table->timestamp('updatedAt')->nullable();
 
-            $table->index(['productId', 'warehouseId', 'movementDate'], 'stock_movement_index_kardex');
+            $table->index(['productId', 'movementDate'], 'stock_movement_index_kardex');
             $table->index('lotId', 'stock_movement_index_lot');
             $table->index(['referenceType', 'referenceId'], 'stock_movement_index_reference');
             $table->index(['type', 'movementDate'], 'stock_movement_index_type');

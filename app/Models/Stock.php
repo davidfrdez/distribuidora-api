@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Saldo por (producto, bodega). Caché de consulta: la verdad está en el kardex.
+ * Saldo GLOBAL por producto. Caché de consulta: la verdad está en el kardex.
  *
  * `availableUnits` y `availableKg` son columnas GENERADAS por la base de datos
  * y por eso NO son asignables: escribirlas provocaría un error de SQL.
@@ -25,7 +25,7 @@ class Stock extends Model
     protected $table = 'stock';
 
     protected $fillable = [
-        'productId', 'warehouseId',
+        'productId',
         'currentUnits', 'reservedUnits', 'currentKg', 'reservedKg',
         'lastMovementAt', 'lastCountAt',
     ];
@@ -50,11 +50,5 @@ class Stock extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class, 'productId');
-    }
-
-    /** @return BelongsTo<Warehouse, $this> */
-    public function warehouse(): BelongsTo
-    {
-        return $this->belongsTo(Warehouse::class, 'warehouseId');
     }
 }

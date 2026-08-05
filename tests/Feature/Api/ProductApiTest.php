@@ -149,20 +149,6 @@ class ProductApiTest extends TestCase
         ])->assertStatus(422)->assertJsonValidationErrors('sku');
     }
 
-    public function test_rechaza_rango_de_temperatura_invertido(): void
-    {
-        $this->actingAsRole(UserRole::ALMACENISTA);
-
-        $this->postJson('/api/admin/products', [
-            'sku' => 'X-1',
-            'name' => 'Producto',
-            'saleMode' => SaleMode::WEIGHT->value,
-            'basePrice' => 1000,
-            'storageTempMin' => 4,
-            'storageTempMax' => -18,
-        ])->assertStatus(422)->assertJsonValidationErrors('storageTempMax');
-    }
-
     public function test_actualiza_un_producto(): void
     {
         $this->actingAsRole(UserRole::ALMACENISTA);
@@ -182,6 +168,49 @@ class ProductApiTest extends TestCase
 
         $this->assertSoftDeleted('product', ['id' => $producto->id]);
         $this->getJson('/api/admin/products')->assertOk()->assertJsonCount(0, 'data');
+    }
+
+    public function test_ver_archivados_lista_solo_los_archivados(): void
+    {
+        $this->actingAsRole(UserRole::ALMACENISTA);
+        $vivo = Product::factory()->create();
+        $archivado = Product::factory()->create();
+        $archivado->delete();
+
+        // Sin el parámetro: sólo el vivo.
+        $this->getJson('/api/admin/products')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $vivo->id);
+
+        // Con archived=1: sólo el archivado.
+        $this->getJson('/api/admin/products?archived=1')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $archivado->id);
+    }
+
+    public function test_reactivar_devuelve_el_producto_al_catalogo(): void
+    {
+        $this->actingAsRole(UserRole::ALMACENISTA);
+        $producto = Product::factory()->create();
+        $producto->delete();
+
+        $this->postJson("/api/admin/products/{$producto->id}/restore")
+            ->assertOk()
+            ->assertJsonPath('data.id', $producto->id);
+
+        $this->assertDatabaseHas('product', ['id' => $producto->id, 'deletedAt' => null]);
+        $this->getJson('/api/admin/products')->assertOk()->assertJsonCount(1, 'data');
+    }
+
+    public function test_reactivar_exige_permiso_de_inventario(): void
+    {
+        $producto = Product::factory()->create();
+        $producto->delete();
+
+        $this->actingAsRole(UserRole::VENDEDOR);
+        $this->postJson("/api/admin/products/{$producto->id}/restore")->assertStatus(403);
     }
 
     // ── Permisos ─────────────────────────────────────────────────────────────

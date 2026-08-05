@@ -22,8 +22,6 @@ class StockMovementResource extends JsonResource
 
             'productId' => $this->productId,
             'product' => new ProductResource($this->whenLoaded('product')),
-            'warehouseId' => $this->warehouseId,
-            'warehouse' => new WarehouseResource($this->whenLoaded('warehouse')),
             'lotId' => $this->lotId,
             'lot' => new LotResource($this->whenLoaded('lot')),
 
