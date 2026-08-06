@@ -3,8 +3,10 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CatalogController;
 use App\Http\Controllers\Api\CompanyController;
+use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\InventorySummaryController;
+use App\Http\Controllers\Api\PayableController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
@@ -103,5 +105,24 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () use ($solo
         // La merma la reporta quien la encuentra en la operación.
         Route::post('waste', [InventoryController::class, 'waste'])
             ->middleware('role:SUPERADMIN,ADMINISTRADOR,ALMACENISTA,EMPACADOR,MAQUILADOR');
+    });
+
+    // ── Plata I: gastos y cuentas por pagar ──────────────────────────────────
+    // Todo esto es información financiera sensible: sólo administrador/superadmin.
+    Route::middleware($soloAdmin)->group(function () {
+        // Cuentas por pagar
+        Route::get('payables/summary', [PayableController::class, 'summary']);
+        Route::get('payables', [PayableController::class, 'index']);
+        Route::post('payables', [PayableController::class, 'store']);
+        Route::get('payables/{payable}', [PayableController::class, 'show']);
+        Route::get('payables/{payable}/invoice', [PayableController::class, 'invoice']);
+        Route::post('payables/{payable}/pay', [PayableController::class, 'pay']);
+        Route::post('payables/{payable}/void', [PayableController::class, 'void']);
+
+        // Gastos
+        Route::get('expenses/summary', [ExpenseController::class, 'summary']);
+        Route::get('expenses', [ExpenseController::class, 'index']);
+        Route::post('expenses', [ExpenseController::class, 'store']);
+        Route::get('expenses/{expense}/support', [ExpenseController::class, 'support']);
     });
 });

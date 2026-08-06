@@ -1,0 +1,26 @@
+# Enrutador de Hostinger para Laravel con docroot = raíz del proyecto.
+#
+# El document root del dominio es esta carpeta (public_html), no /public. Este
+# archivo reenvía TODAS las peticiones al front-controller de Laravel en
+# /public, donde el public/.htaccess las manda a index.php.
+#
+# Sin este archivo, entrar a "/" intenta listar la carpeta y el servidor
+# responde 403 Forbidden (que es justo el síntoma que hay que resolver).
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # ── Seguridad: con el docroot en la raíz, estos archivos/carpetas quedarían
+    # accesibles por HTTP. Se bloquean SIEMPRE (devuelven 403 a propósito). ──
+    RewriteRule ^\.env - [F,L]
+    RewriteRule ^\.git - [F,L]
+    RewriteRule ^(composer\.(json|lock)|package\.json|artisan|phpunit\.xml)$ - [F,L]
+    RewriteRule ^(app|bootstrap|config|database|routes|storage|tests|vendor)(/|$) - [F,L]
+
+    # ── Enrutado al front-controller en /public (evita bucle con la condición) ──
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
+
+# Si el módulo de rewrite no está disponible, negar el listado igualmente.
+Options -Indexes

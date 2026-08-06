@@ -107,6 +107,12 @@ enum UserRole: string
         return in_array($this, [self::SUPERADMIN, self::ADMINISTRADOR], true);
     }
 
+    /** Roles autorizados a gestionar gastos y cuentas por pagar del negocio. */
+    public function canManageFinances(): bool
+    {
+        return in_array($this, [self::SUPERADMIN, self::ADMINISTRADOR], true);
+    }
+
     /** El rol de soporte/proveedor, por encima incluso del administrador. */
     public function isSuperAdmin(): bool
     {
