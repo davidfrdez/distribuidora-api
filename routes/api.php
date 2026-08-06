@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\CashController;
 use App\Http\Controllers\Api\CatalogController;
 use App\Http\Controllers\Api\CompanyController;
 use App\Http\Controllers\Api\ExpenseController;
@@ -124,5 +125,15 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () use ($solo
         Route::get('expenses', [ExpenseController::class, 'index']);
         Route::post('expenses', [ExpenseController::class, 'store']);
         Route::get('expenses/{expense}/support', [ExpenseController::class, 'support']);
+    });
+
+    // ── Caja: apertura, movimientos, arqueo y cierre ─────────────────────────
+    // La opera el cajero además del administrador.
+    Route::middleware('role:SUPERADMIN,ADMINISTRADOR,CAJERO')->group(function () {
+        Route::get('cash/current', [CashController::class, 'current']);
+        Route::get('cash/sessions', [CashController::class, 'index']);
+        Route::post('cash/open', [CashController::class, 'open']);
+        Route::post('cash/movements', [CashController::class, 'move']);
+        Route::post('cash/close', [CashController::class, 'close']);
     });
 });
