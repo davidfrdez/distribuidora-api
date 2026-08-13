@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Enums\PayableStatus;
+use App\Models\CashSession;
 use App\Models\Payable;
 use App\Models\Supplier;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -29,11 +30,21 @@ class PayableFactory extends Factory
             'paidAmount' => 0,
             'status' => PayableStatus::PENDING->value,
             'createdById' => null,
+            'cashSessionId' => null,
         ];
     }
 
     public function dueOn(string $date): static
     {
         return $this->state(fn () => ['dueDate' => $date]);
+    }
+
+    /** Agrupa la cuenta por pagar en el cierre de caja diario de ese día. */
+    public function forSession(CashSession $session): static
+    {
+        return $this->state(fn () => [
+            'cashSessionId' => $session->id,
+            'issueDate' => $session->businessDate->toDateString(),
+        ]);
     }
 }

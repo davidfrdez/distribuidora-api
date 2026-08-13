@@ -3,8 +3,10 @@
 Fuente de verdad del estado del proyecto. Actualizar al cerrar cada tarea.
 
 **Estado global:** Fase 0 completada · Fase 1 con el motor de inventario terminado
-y verificado; falta compras formales, conteos, API y pantallas.
-**127 tests en verde**, PHPStan nivel 6 y Pint limpios.
+y verificado; falta compras formales, conteos, API y pantallas · Fase 4
+(backend) con gastos, cuentas por pagar y cierre de caja diario funcionando;
+falta el frontend y la cartera de clientes.
+**151 tests en verde**, PHPStan nivel 6 y Pint limpios.
 
 > **El sistema NO es multi-tenant.** Un solo negocio, login simple, acceso por rol.
 > Ver `CLAUDE.md` §0 antes de tocar el esquema.
@@ -15,7 +17,7 @@ y verificado; falta compras formales, conteos, API y pantallas.
 | 1 | Catálogo e inventario con peso variable | 3 sem | 🔵 Motor listo |
 | 2 | Clientes, listas de precios y pedidos | 3 sem | ⬜ |
 | 3 | Alistamiento, embalaje y despacho | 2 sem | ⬜ |
-| 4 | Caja, pagos y cartera | 2 sem | ⬜ |
+| 4 | Caja, pagos y cartera de proveedores | 2 sem | 🔵 Backend listo, falta frontend |
 | 5 | Mermas y maquila | 2 sem | ⬜ |
 | 6 | Pedidos por WhatsApp con IA + n8n | 2 sem | ⬜ |
 | 7 | Facturación DIAN y reportes | 2 sem | ⬜ |
@@ -104,15 +106,29 @@ El corazón del sistema. Nada de lo demás funciona si esto queda mal.
 
 ---
 
-## ⬜ Fase 4 — Caja, pagos y cartera
+## 🔵 Fase 4 — Caja, pagos y cartera de proveedores
 
-**Tablas:** `cash_register`, `cash_session`, `cash_movement`, `payment`,
-`account_receivable`, `receivable_payment`.
+**Diseño real (reemplaza el original con `cash_register`/`cash_movement`/
+`payment`/`account_receivable`/`receivable_payment`, que quedó obsoleto):**
+`expense` (gastos operativos), `payable` + `payable_payment` (cuentas por
+pagar a proveedor, con ciclo de abonos), `cash_session` + `cash_denomination`
+(cierre de caja diario / arqueo). Ver `docs/BASE-DE-DATOS.md` §3.5 y §5.8.
 
-- [ ] Apertura, movimientos, arqueo y cierre con descuadre
-- [ ] Medios de pago: efectivo, Nequi, transferencia, datáfono, crédito
-- [ ] Cartera: cupo, plazo, edades, bloqueo automático por mora o sobrecupo
-- [ ] Frontend: caja y estado de cartera
+- [x] Gastos operativos (`ExpenseService`, `ExpenseController`) con categoría,
+      medio de pago y soporte adjunto
+- [x] Cuentas por pagar a proveedor (`PayableService`, `PayableController`):
+      alta, abonos parciales, saldo derivado, anulación, resumen de cartera
+- [x] **Cierre de caja diario (arqueo)**, UN cierre por `businessDate`
+      (`CashSessionService`, `CashSessionController`): base del día, ventas
+      por forma de pago, arqueo físico por denominación, egresos del día
+      (`expense` filtrado por `paymentMethod=CASH`) y cuentas por pagar del
+      día (`payable`, sólo informativo) — con descuadre calculado
+      (`overShort = countedCashTotal − expectedCash`)
+- [x] Medios de pago: efectivo, Nequi, transferencia, datáfono (`PaymentMethod`)
+- [ ] Cartera de **clientes** (`account_receivable`): cupo, plazo, edades,
+      bloqueo automático por mora o sobrecupo — **fuera de alcance por ahora**,
+      pendiente de calibrar con el negocio (ver "Punto abierto" más abajo)
+- [ ] Frontend: cierre de caja diario y estado de cartera de proveedores
 
 ---
 

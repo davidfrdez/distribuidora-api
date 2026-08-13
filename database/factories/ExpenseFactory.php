@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Enums\ExpenseCategory;
 use App\Enums\PaymentMethod;
+use App\Models\CashSession;
 use App\Models\Expense;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -27,6 +28,16 @@ class ExpenseFactory extends Factory
             'paymentMethod' => PaymentMethod::CASH->value,
             'supplierId' => null,
             'createdById' => null,
+            'cashSessionId' => null,
         ];
+    }
+
+    /** Liga el gasto a un cierre de caja diario (el "nómina y otros" del arqueo). */
+    public function forSession(CashSession $session): static
+    {
+        return $this->state(fn () => [
+            'cashSessionId' => $session->id,
+            'expenseDate' => $session->businessDate->toDateString(),
+        ]);
     }
 }

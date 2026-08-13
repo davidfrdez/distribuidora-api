@@ -28,7 +28,7 @@ class Payable extends Model
     protected $fillable = [
         'supplierId', 'invoiceNumber', 'concept',
         'issueDate', 'dueDate', 'totalAmount', 'paidAmount',
-        'status', 'attachmentPath', 'notes', 'createdById',
+        'status', 'attachmentPath', 'notes', 'createdById', 'cashSessionId',
     ];
 
     protected $casts = [
@@ -57,6 +57,16 @@ class Payable extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'createdById');
+    }
+
+    /**
+     * El cierre de caja diario que agrupa esta cuenta (si aplica). Sólo informativo.
+     *
+     * @return BelongsTo<CashSession, $this>
+     */
+    public function cashSession(): BelongsTo
+    {
+        return $this->belongsTo(CashSession::class, 'cashSessionId');
     }
 
     // ── Reglas de negocio ──────────────────────────────────────────────────────

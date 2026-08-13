@@ -26,7 +26,7 @@ enum UserRole: string
     /** Toma pedidos (mostrador, teléfono, WhatsApp) y gestiona clientes. */
     case VENDEDOR = 'VENDEDOR';
 
-    /** Opera la caja: cobros, arqueo, cierre de turno. */
+    /** Opera la caja: cobros y cierre de caja diario (arqueo). */
     case CAJERO = 'CAJERO';
 
     /** Recibe mercancía, mueve bodegas, hace conteos y registra mermas. */
@@ -89,8 +89,8 @@ enum UserRole: string
         return in_array($this, [self::SUPERADMIN, self::ADMINISTRADOR], true);
     }
 
-    /** Roles que pueden abrir y operar una caja. */
-    public function canHandleCash(): bool
+    /** Roles que pueden gestionar el cierre de caja diario (arqueo). */
+    public function canManageCash(): bool
     {
         return in_array($this, [self::SUPERADMIN, self::ADMINISTRADOR, self::CAJERO], true);
     }

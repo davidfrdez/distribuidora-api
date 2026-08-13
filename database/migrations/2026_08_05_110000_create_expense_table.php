@@ -22,6 +22,9 @@ return new class extends Migration
             $table->string('paymentMethod', 20);            // PaymentMethod
             // Un gasto puede (o no) estar asociado a un proveedor concreto.
             $table->foreignId('supplierId')->nullable()->constrained('supplier')->nullOnDelete();
+            // "Nómina y otros" del cierre de caja diario: un gasto puede quedar
+            // ligado al día en que se registró en el arqueo.
+            $table->foreignId('cashSessionId')->nullable()->constrained('cash_session')->nullOnDelete();
             $table->string('attachmentPath', 300)->nullable();   // soporte (foto/recibo)
             $table->string('notes', 500)->nullable();
             $table->foreignId('createdById')->nullable()->constrained('user')->nullOnDelete();
@@ -31,6 +34,7 @@ return new class extends Migration
 
             $table->index(['expenseDate'], 'expense_index_date');
             $table->index(['category'], 'expense_index_category');
+            $table->index(['cashSessionId'], 'expense_index_cash_session');
         });
     }
 

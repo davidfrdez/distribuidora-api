@@ -2,8 +2,9 @@
 
 Esquema relacional del backend. Complementa `CLAUDE.md` (contexto general),
 `TECNICO.md` (decisiones de diseño) y `PLAN-DE-TRABAJO.md` (estado de tareas).
-Documenta el esquema tal como lo definen las migraciones de la Fase 0 y la
-Fase 1 (catálogo e inventario).
+Documenta el esquema tal como lo definen las migraciones de la Fase 0, la
+Fase 1 (catálogo e inventario) y la Fase 4 (caja y finanzas: `expense`,
+`payable`, `payable_payment`, `cash_session`, `cash_denomination`).
 
 ---
 
@@ -94,6 +95,20 @@ erDiagram
     warehouse ||--o{ stock_reservation : "warehouseId"
     lot ||--o{ stock_reservation : "lotId"
     user ||--o{ stock_reservation : "createdById"
+
+    supplier ||--o{ expense : "supplierId"
+    user ||--o{ expense : "createdById"
+    cash_session ||--o{ expense : "cashSessionId (nullable)"
+
+    supplier ||--o{ payable : "supplierId"
+    user ||--o{ payable : "createdById"
+    cash_session ||--o{ payable : "cashSessionId (nullable, informativo)"
+    payable ||--o{ payable_payment : "payableId"
+    user ||--o{ payable_payment : "createdById"
+
+    user ||--o{ cash_session : "openedByUserId"
+    user ||--o{ cash_session : "closedByUserId"
+    cash_session ||--o{ cash_denomination : "cashSessionId"
 
     company {
         bigint id PK
@@ -189,6 +204,43 @@ erDiagram
         bigint lotId FK
         bigint createdById FK
         string status
+    }
+    expense {
+        bigint id PK
+        string category
+        decimal amount
+        string paymentMethod
+        bigint supplierId FK
+        bigint cashSessionId FK
+    }
+    payable {
+        bigint id PK
+        bigint supplierId FK
+        bigint cashSessionId FK
+        decimal totalAmount
+        decimal paidAmount
+        string status
+    }
+    payable_payment {
+        bigint id PK
+        bigint payableId FK
+        decimal amount
+        string paymentMethod
+    }
+    cash_session {
+        bigint id PK
+        date businessDate UK
+        decimal baseAmount
+        decimal countedCashTotal
+        decimal expectedCash
+        decimal overShort
+        string status
+    }
+    cash_denomination {
+        bigint id PK
+        bigint cashSessionId FK
+        int denomination
+        int quantity
     }
 ```
 
@@ -637,6 +689,164 @@ producto y el lote concreto se decide al alistar (FIFO).
 
 ---
 
+### 3.5 Módulo Caja y finanzas (Fase 4)
+
+Diseño **unificado**: no existe un turno de caja por evento (abrir→mover→cerrar).
+El cierre de caja diario (`cash_session`) es un documento por `businessDate`
+que agrupa el arqueo de efectivo, los egresos del día (`expense`) y las cuentas
+por pagar registradas ese día (`payable`). `expense` y `payable` son las
+fuentes de verdad de gastos y cartera respectivamente; el cierre sólo las
+liga con una FK opcional `cashSessionId`.
+
+#### `expense` — gastos operativos del negocio
+
+El CONSUMO del día a día (aseo, servicios, transporte, jornales/"nómina y
+otros"), distinto de una obligación con un proveedor (`payable`).
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `id` | bigint PK | |
+| `category` | string(20) | **Enum `ExpenseCategory`** |
+| `description` | string(200) | |
+| `amount` | decimal(14,2) | |
+| `expenseDate` | date | |
+| `paymentMethod` | string(20) | **Enum `PaymentMethod`**; `CASH` = pagado del cajón del día |
+| `supplierId` | bigint nullable FK → `supplier` | `nullOnDelete` |
+| `cashSessionId` | bigint nullable FK → `cash_session` | `nullOnDelete`; ligado si nació en un cierre diario |
+| `attachmentPath` | string(300) nullable | Soporte (foto/recibo) |
+| `notes` | string(500) nullable | |
+| `createdById` | bigint nullable FK → `user` | `nullOnDelete` |
+| `createdAt`, `updatedAt` | timestamp nullable | |
+
+- **FKs**: `supplierId` → `supplier` (`nullOnDelete`), `cashSessionId` →
+  `cash_session` (`nullOnDelete`), `createdById` → `user` (`nullOnDelete`).
+- **Índices**: `expense_index_date`, `expense_index_category`,
+  `expense_index_cash_session`.
+- **Modelo** `Expense`: `supplier()`, `cashSession()`, `createdBy()` (belongsTo).
+
+#### `payable` — cuentas por pagar a proveedor
+
+La obligación con fecha propia (factura hoy, pago a mes vencido). `paidAmount`
+y `status` los mantiene `PayableService` sumando los pagos (`payable_payment`);
+el saldo (`totalAmount - paidAmount`) es derivado, no se guarda.
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `id` | bigint PK | |
+| `supplierId` | bigint FK → `supplier` | Obligatorio |
+| `invoiceNumber` | string(60) nullable | |
+| `concept` | string(200) | |
+| `issueDate` | date | |
+| `dueDate` | date nullable | |
+| `totalAmount` | decimal(14,2) | |
+| `paidAmount` | decimal(14,2) | Default 0; lo mantiene `PayableService` |
+| `status` | string(20) | **Enum `PayableStatus`**; default `PENDING` |
+| `attachmentPath` | string(300) nullable | Foto de la factura |
+| `notes` | string(500) nullable | |
+| `createdById` | bigint nullable FK → `user` | `nullOnDelete` |
+| `cashSessionId` | bigint nullable FK → `cash_session` | `nullOnDelete`; **sólo agrupa por día, no es cartera** |
+| `createdAt`, `updatedAt` | timestamp nullable | |
+
+- **FKs**: `supplierId` → `supplier` (restrict), `createdById` → `user`
+  (`nullOnDelete`), `cashSessionId` → `cash_session` (`nullOnDelete`).
+- **Índices**: `payable_index_status_due` (`status, dueDate`),
+  `payable_index_supplier`, `payable_index_cash_session`.
+- **Modelo** `Payable`: `supplier()`, `cashSession()`, `createdBy()`
+  (belongsTo), `payments()` (hasMany `PayablePayment`). Reglas: `balance()`,
+  `isOverdue()`. Scope `open()` (PENDING/PARTIAL).
+
+#### `payable_payment` — abonos contra una cuenta por pagar
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `id` | bigint PK | |
+| `payableId` | bigint FK → `payable` | `cascadeOnDelete` |
+| `amount` | decimal(14,2) | |
+| `paymentDate` | date | |
+| `paymentMethod` | string(20) | **Enum `PaymentMethod`** |
+| `reference` | string(80) nullable | Nro. de transferencia, Nequi, etc. |
+| `notes` | string(300) nullable | |
+| `createdById` | bigint nullable FK → `user` | `nullOnDelete` |
+| `createdAt`, `updatedAt` | timestamp nullable | |
+
+- **FKs**: `payableId` → `payable` (`cascadeOnDelete`), `createdById` → `user`
+  (`nullOnDelete`).
+- **Índices**: `payable_payment_index_payable`.
+- **Modelo** `PayablePayment`: `payable()`, `createdBy()` (belongsTo).
+
+#### `cash_session` — cierre de caja diario (arqueo)
+
+Un cierre por `businessDate` (único). Los totales y el descuadre
+(`overShort`) los calcula `CashSessionService::recalculate()`; nunca se
+escriben a mano.
+
+**Fórmula del descuadre:**
+
+```
+countedCashTotal  = Σ (cash_denomination.denomination × quantity)
+cashExpensesTotal = Σ expense.amount WHERE paymentMethod = CASH AND cashSessionId = <este cierre>
+expectedCash      = baseAmount + salesCash − cashExpensesTotal
+overShort         = countedCashTotal − expectedCash        (negativo = faltante)
+```
+
+`payablesTotal` (Σ `payable.totalAmount` del día) es **sólo informativo**: no
+entra al cálculo del descuadre porque una cuenta por pagar no sale
+físicamente del cajón del día.
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `id` | bigint PK | |
+| `businessDate` | date **unique** | Un cierre por día |
+| `baseAmount` | decimal(14,2) | Base del día (fondo inicial); default 0 |
+| `salesCash`, `salesBank`, `salesNequi` | decimal(14,2) | Ventas por forma de pago; default 0 |
+| `reportedSalesTotal` | decimal(14,2) | Total venta del día (digitado a mano); default 0 |
+| `zNumber` | string(30) nullable | Nº de la tirilla Z |
+| `zInvoiceCount` | int unsigned nullable | Nº de facturas de la Z |
+| `countedCashTotal` | decimal(14,2) | Calculado; default 0 |
+| `expensesTotal` | decimal(14,2) | Σ `expense` ligados; default 0 |
+| `payablesTotal` | decimal(14,2) | Σ `payable` ligados; informativo; default 0 |
+| `expectedCash` | decimal(14,2) | Calculado; default 0 |
+| `overShort` | decimal(14,2) | Calculado; default 0 |
+| `status` | string(10) | **Enum `CashSessionStatus`**; default `OPEN` |
+| `notes` | text nullable | |
+| `openedByUserId`, `closedByUserId` | bigint nullable FK → `user` | `nullOnDelete` |
+| `closedAt` | timestamp nullable | |
+| `createdAt`, `updatedAt` | timestamp nullable | |
+
+- **FKs**: `openedByUserId`, `closedByUserId` → `user` (`nullOnDelete`).
+  Referida por `cash_denomination.cashSessionId` (`cascadeOnDelete`),
+  `expense.cashSessionId` y `payable.cashSessionId` (`nullOnDelete`).
+- **Índices**: `cash_session_unique_business_date` (unique en `businessDate`).
+- **Modelo** `CashSession`: `openedBy()`, `closedBy()` (belongsTo),
+  `denominations()` (hasMany `CashDenomination`), `expenses()` (hasMany
+  `Expense`), `payables()` (hasMany `Payable`).
+- **Servicio** `CashSessionService`: `openForDate()` (abre o recupera, sin
+  duplicar), `saveDraft()` (guarda escalares y sincroniza hijos), `close()`.
+  `saveDraft()`/`close()` rechazan la edición si `status = CLOSED`.
+
+#### `cash_denomination` — arqueo de efectivo por denominación
+
+Fila por cada billete/moneda contado (50, 100, 200, 500, 1.000, 2.000, 5.000,
+10.000, 20.000, 50.000, 100.000). El valor (`denomination × quantity`) no se
+guarda: se calcula. No tiene vida por fuera de su `cash_session`: al guardar
+el borrador se reemplaza entera (borra y recrea).
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `id` | bigint PK | |
+| `cashSessionId` | bigint FK → `cash_session` | `cascadeOnDelete` |
+| `denomination` | int unsigned | Valor del billete/moneda |
+| `quantity` | int unsigned | Cantidad contada; default 0 |
+| `createdAt`, `updatedAt` | timestamp nullable | |
+
+- **FKs**: `cashSessionId` → `cash_session` (`cascadeOnDelete`).
+- **Índices**: `cash_denomination_unique_session_denom` (unique en
+  `cashSessionId, denomination`).
+- **Modelo** `CashDenomination`: `session()` (belongsTo). `value()` = 
+  `denomination × quantity`.
+
+---
+
 ## 4. Enums del esquema
 
 Valores posibles de las columnas string que representan un enum de PHP.
@@ -727,6 +937,48 @@ roles de plataforma). Los permisos finos son métodos del enum
 | `MAQUILADOR` | Órdenes de despiece y porcionado |
 | `DOMICILIARIO` | Transporte y entrega |
 
+### `ExpenseCategory` — `expense.category`
+Enum fijo (no tabla) para no sumar otra pantalla de ABM en esta fase.
+
+| Valor | Significado |
+|---|---|
+| `ASEO` | Insumos de limpieza |
+| `SERVICIOS` | Luz, agua, internet |
+| `ARRIENDO` | |
+| `TRANSPORTE` | Combustible, fletes |
+| `NOMINA` | Jornales — el "nómina y otros" del cierre de caja diario |
+| `MANTENIMIENTO` | Neveras, equipos |
+| `IMPUESTOS` | |
+| `OTRO` | |
+
+### `PaymentMethod` — `expense.paymentMethod`, `payable_payment.paymentMethod`
+Medio por el que entra o sale la plata. `CASH` es el único que afecta el
+descuadre del cierre de caja diario (el resto no sale del cajón físico).
+
+| Valor | Significado |
+|---|---|
+| `CASH` | Efectivo |
+| `NEQUI` | Billetera Nequi |
+| `TRANSFER` | Transferencia bancaria |
+| `CARD` | Datáfono / tarjeta |
+
+### `PayableStatus` — `payable.status`
+`OVERDUE` no es un estado: se deriva de `dueDate` contra hoy mientras la
+cuenta siga abierta (`isOverdue()`).
+
+| Valor | Significado |
+|---|---|
+| `PENDING` | Sin ningún pago |
+| `PARTIAL` | Pagada en parte |
+| `PAID` | Saldada |
+| `VOID` | Anulada |
+
+### `CashSessionStatus` — `cash_session.status`
+| Valor | Significado |
+|---|---|
+| `OPEN` | En borrador: admite cambios |
+| `CLOSED` | Arqueado y cerrado: ya no admite cambios |
+
 ---
 
 ## 5. Notas de integridad relacional
@@ -795,3 +1047,22 @@ aparta cantidad del **producto** (resta del disponible vía `reservedUnits` /
 `reservedKg`), y el **lote concreto se decide al alistar** siguiendo el FIFO. La
 reserva expira (`expiresAt`, TTL en `company.reservationTtlMinutes`) para que un
 pedido abandonado no bloquee stock indefinidamente.
+
+### 5.8 Caja unificada: un solo cierre diario, sin turno por evento
+
+La primera versión de Fase 4 modelaba `cash_session` como un **turno de caja**
+(abrir con base → registrar movimientos → contar y cerrar), con una tabla
+`cash_movement` para los ingresos/egresos de efectivo. Se **reemplazó** por un
+diseño unificado: `cash_session` pasó a representar el **cierre de caja
+diario** (arqueo), indexado por `businessDate` (único, un cierre por día), y
+`cash_movement` se eliminó. Motivo: el negocio no separa "turnos" dentro del
+día — lo que existe es UNA hoja de cierre por día, con el arqueo físico por
+denominación (`cash_denomination`) y los egresos del día resueltos por el
+`expense` ya existente (filtrando `paymentMethod = CASH`), en vez de duplicar
+el concepto de "movimiento de caja". Esto también evita mantener dos tablas
+de "cuánto se gastó" (`cash_movement` y `expense`) y dos de "cuánto se debe"
+(una versión ligera dentro de caja y la `payable` completa con su ciclo de
+pagos): `expense` y `payable` son la única fuente de verdad, y `cash_session`
+sólo las agrupa por día vía una FK opcional `cashSessionId` con
+`nullOnDelete` — perder el cierre del día no debe borrar un gasto o una
+cuenta por pagar reales.

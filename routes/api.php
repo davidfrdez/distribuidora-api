@@ -1,7 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
-use App\Http\Controllers\Api\CashController;
+use App\Http\Controllers\Api\CashSessionController;
 use App\Http\Controllers\Api\CatalogController;
 use App\Http\Controllers\Api\CompanyController;
 use App\Http\Controllers\Api\ExpenseController;
@@ -127,13 +127,15 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () use ($solo
         Route::get('expenses/{expense}/support', [ExpenseController::class, 'support']);
     });
 
-    // ── Caja: apertura, movimientos, arqueo y cierre ─────────────────────────
-    // La opera el cajero además del administrador.
-    Route::middleware('role:SUPERADMIN,ADMINISTRADOR,CAJERO')->group(function () {
-        Route::get('cash/current', [CashController::class, 'current']);
-        Route::get('cash/sessions', [CashController::class, 'index']);
-        Route::post('cash/open', [CashController::class, 'open']);
-        Route::post('cash/movements', [CashController::class, 'move']);
-        Route::post('cash/close', [CashController::class, 'close']);
+    // ── Caja: cierre diario (arqueo) ─────────────────────────────────────────
+    // La opera el cajero además del administrador. `current` va ANTES del
+    // wildcard `{cashSession}` para que no se interprete como un id.
+    Route::middleware('role:SUPERADMIN,ADMINISTRADOR,CAJERO')->prefix('cash-sessions')->group(function () {
+        Route::get('/', [CashSessionController::class, 'index']);
+        Route::post('/', [CashSessionController::class, 'store']);
+        Route::get('current', [CashSessionController::class, 'current']);
+        Route::get('{cashSession}', [CashSessionController::class, 'show']);
+        Route::put('{cashSession}', [CashSessionController::class, 'update']);
+        Route::post('{cashSession}/close', [CashSessionController::class, 'close']);
     });
 });

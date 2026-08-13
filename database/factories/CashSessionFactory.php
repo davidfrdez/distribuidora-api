@@ -4,7 +4,6 @@ namespace Database\Factories;
 
 use App\Enums\CashSessionStatus;
 use App\Models\CashSession;
-use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -20,10 +19,16 @@ class CashSessionFactory extends Factory
     public function definition(): array
     {
         return [
-            'openedById' => User::factory(),
-            'openingAmount' => 100000,
-            'openedAt' => now(),
+            // `businessDate` es único: cada instancia toma un día distinto para
+            // no chocar entre sí cuando el test crea varias.
+            'businessDate' => now()->subDays(fake()->unique()->numberBetween(0, 3650))->toDateString(),
+            'baseAmount' => 100000,
             'status' => CashSessionStatus::OPEN->value,
         ];
+    }
+
+    public function closed(): static
+    {
+        return $this->state(fn () => ['status' => CashSessionStatus::CLOSED->value, 'closedAt' => now()]);
     }
 }

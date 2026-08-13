@@ -3,12 +3,12 @@
 namespace App\Enums;
 
 /**
- * Estado de un turno de caja.
+ * Estado de un cierre de caja diario (arqueo).
  */
 enum CashSessionStatus: string
 {
-    case OPEN = 'OPEN';       // caja abierta, admite movimientos
-    case CLOSED = 'CLOSED';   // arqueada y cerrada
+    case OPEN = 'OPEN';       // en borrador: admite cambios
+    case CLOSED = 'CLOSED';   // arqueado y cerrado: ya no admite cambios
 
     public function isOpen(): bool
     {

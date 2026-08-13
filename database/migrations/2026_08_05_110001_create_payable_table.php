@@ -34,6 +34,9 @@ return new class extends Migration
             $table->string('attachmentPath', 300)->nullable(); // foto de la factura
             $table->string('notes', 500)->nullable();
             $table->foreignId('createdById')->nullable()->constrained('user')->nullOnDelete();
+            // El cierre de caja diario sólo AGRUPA cuentas por día; no es la
+            // fuente de verdad de cartera (eso sigue siendo `payable` + `status`).
+            $table->foreignId('cashSessionId')->nullable()->constrained('cash_session')->nullOnDelete();
 
             $table->timestamp('createdAt')->nullable();
             $table->timestamp('updatedAt')->nullable();
@@ -41,6 +44,7 @@ return new class extends Migration
             // "¿Qué se vence esta semana?" y "¿cuánto debo?" filtran por estado + vencimiento.
             $table->index(['status', 'dueDate'], 'payable_index_status_due');
             $table->index(['supplierId'], 'payable_index_supplier');
+            $table->index(['cashSessionId'], 'payable_index_cash_session');
         });
     }
 

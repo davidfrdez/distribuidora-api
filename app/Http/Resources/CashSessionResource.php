@@ -16,23 +16,38 @@ class CashSessionResource extends JsonResource
     {
         return [
             'id' => $this->id,
+            'businessDate' => $this->businessDate->toDateString(),
+
+            'baseAmount' => $this->baseAmount,
+            'salesCash' => $this->salesCash,
+            'salesBank' => $this->salesBank,
+            'salesNequi' => $this->salesNequi,
+            'reportedSalesTotal' => $this->reportedSalesTotal,
+
+            'zNumber' => $this->zNumber,
+            'zInvoiceCount' => $this->zInvoiceCount,
+
+            'countedCashTotal' => $this->countedCashTotal,
+            'expensesTotal' => $this->expensesTotal,
+            'payablesTotal' => $this->payablesTotal,
+            'expectedCash' => $this->expectedCash,
+            'overShort' => $this->overShort,
+
             'status' => $this->status,
             'statusLabel' => $this->status->label(),
-
-            'openingAmount' => $this->openingAmount,
-            'openedAt' => $this->openedAt,
-            'openedById' => $this->openedById,
-            'openedByName' => $this->whenLoaded('openedBy', fn () => $this->openedBy?->name),
-
-            'closingExpected' => $this->closingExpected,
-            'closingCounted' => $this->closingCounted,
-            'difference' => $this->difference,
-            'closedAt' => $this->closedAt,
-            'closedById' => $this->closedById,
-            'closedByName' => $this->whenLoaded('closedBy', fn () => $this->closedBy?->name),
-
             'notes' => $this->notes,
-            'movements' => CashMovementResource::collection($this->whenLoaded('movements')),
+
+            'openedByUserId' => $this->openedByUserId,
+            'openedByName' => $this->whenLoaded('openedBy', fn () => $this->openedBy?->name),
+            'closedByUserId' => $this->closedByUserId,
+            'closedByName' => $this->whenLoaded('closedBy', fn () => $this->closedBy?->name),
+            'closedAt' => $this->closedAt,
+
+            'createdAt' => $this->createdAt,
+
+            'denominations' => CashDenominationResource::collection($this->whenLoaded('denominations')),
+            'expenses' => ExpenseResource::collection($this->whenLoaded('expenses')),
+            'payables' => PayableResource::collection($this->whenLoaded('payables')),
         ];
     }
 }

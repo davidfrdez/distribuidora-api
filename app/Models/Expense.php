@@ -26,7 +26,7 @@ class Expense extends Model
 
     protected $fillable = [
         'category', 'description', 'amount', 'expenseDate', 'paymentMethod',
-        'supplierId', 'attachmentPath', 'notes', 'createdById',
+        'supplierId', 'attachmentPath', 'notes', 'createdById', 'cashSessionId',
     ];
 
     protected $casts = [
@@ -48,5 +48,15 @@ class Expense extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'createdById');
+    }
+
+    /**
+     * El cierre de caja diario al que quedó ligado este gasto (si aplica).
+     *
+     * @return BelongsTo<CashSession, $this>
+     */
+    public function cashSession(): BelongsTo
+    {
+        return $this->belongsTo(CashSession::class, 'cashSessionId');
     }
 }
